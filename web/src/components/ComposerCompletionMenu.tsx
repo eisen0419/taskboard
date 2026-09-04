@@ -116,7 +116,7 @@ export function ComposerCompletionMenu({
   return createPortal(
     <div
       ref={menuRef}
-      className="ai-chat-skill-menu issue-mention-menu composer-completion-menu"
+      className="issue-mention-menu composer-completion-menu"
       role="listbox"
       aria-label={text("Composer 补全", "Composer completions")}
       aria-busy={loading}

@@ -6,7 +6,6 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, test } from "node:test";
-import { WebSocket, WebSocketServer } from "ws";
 
 import { createTaskboardServer, resolveServerOptions } from "../server/index.mjs";
 
@@ -83,38 +82,12 @@ async function openEventStream(baseUrl, headers) {
   });
 }
 
-async function openWebSocket(url, headers) {
-  return new Promise((resolve, reject) => {
-    const client = new WebSocket(url, { headers });
-    client.once("open", () => {
-      client.terminate();
-      resolve(101);
-    });
-    client.once("unexpected-response", (_request, response) => {
-      response.resume();
-      resolve(response.statusCode);
-    });
-    client.once("error", reject);
-  });
-}
-
 test("health and the default local project are available", async () => {
-  let skillPath;
-  const baseUrl = await startServer(async (directory) => {
-    skillPath = path.join(directory, "skills", "manage-taskboard", "SKILL.md");
-    return { skillPath };
-  });
+  const baseUrl = await startServer();
 
   const health = await request(baseUrl, "/health");
   assert.equal(health.response.status, 200);
   assert.deepEqual(health.body, { status: "ok" });
-
-  const metadata = await request(baseUrl, "/api/meta");
-  assert.equal(metadata.response.status, 200);
-  assert.deepEqual(metadata.body, {
-    manageTaskboardSkillPath: skillPath,
-    capabilities: { localAiChat: true },
-  });
 
   const result = await request(baseUrl, "/api/projects");
   assert.equal(result.response.status, 200);
@@ -407,25 +380,6 @@ test("development context scan resolves the current Codex conversation workspace
   assert.equal(deviceResult.body.workspacePath, deviceWorkspace);
 });
 
-test("device workspaces come from this machine's Codex project roots", async () => {
-  const baseUrl = await startServer(async (directory) => {
-    const codexStatePath = path.join(directory, "codex-state.json");
-    await writeFile(codexStatePath, JSON.stringify({
-      "local-projects": {
-        "local-project-a": { rootPaths: ["/Users/alice/project-a"] },
-        "local-project-b": { rootPaths: ["/Users/alice/project-b"] },
-      },
-    }));
-    return { codexStatePath };
-  });
-  const result = await request(baseUrl, "/api/device-workspaces");
-  assert.equal(result.response.status, 200);
-  assert.deepEqual(result.body.workspaces, {
-    "local-project-a": "/Users/alice/project-a",
-    "local-project-b": "/Users/alice/project-b",
-  });
-});
-
 test("accepts private LAN requests and rejects public Host and Origin headers", async () => {
   const baseUrl = await startServer(undefined, { host: "0.0.0.0" });
 
@@ -516,131 +470,6 @@ test("trusted HTTPS origins allow their exact public Host without trusting forwa
   });
   assert.equal(wrongOriginPort.status, 403);
   assert.equal(wrongOriginPort.body.error.code, "INVALID_ORIGIN");
-});
-
-test("trusted HTTPS origins do not inherit device-local capabilities from tunnel loopback", async () => {
-  const trustedOrigin = "https://board.example.test";
-  let skillPath;
-  const baseUrl = await startServer(async (directory) => {
-    skillPath = path.join(directory, "skills", "manage-taskboard", "SKILL.md");
-    return {
-      skillPath,
-      processEnv: { ...process.env, CODEX_TASKBOARD_TRUSTED_ORIGINS: trustedOrigin },
-      cloudConfigStore: {
-        async read() {
-          return {
-            remoteUrl: "https://tasks.example.test",
-            actorName: "Test actor",
-            sharedKey: "test-shared-key",
-            projectMappings: {},
-          };
-        },
-      },
-      remoteFetch: async () => new Response(JSON.stringify({ projects: [] }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
-    };
-  });
-  const trustedRequest = { headers: { origin: trustedOrigin } };
-
-  const projects = await request(baseUrl, "/api/projects", trustedRequest);
-  assert.equal(projects.response.status, 200);
-  assert.deepEqual(projects.body, { projects: [] });
-
-  const metadata = await request(baseUrl, "/api/meta", trustedRequest);
-  assert.equal(metadata.response.status, 200);
-  assert.deepEqual(metadata.body, {
-    capabilities: { localAiChat: false },
-    mode: "cloud",
-    realtime: {
-      transport: "websocket",
-      endpoint: "/api/events",
-    },
-    localCapabilities: { available: false },
-  });
-  assert.equal(Object.hasOwn(metadata.body, "manageTaskboardSkillPath"), false);
-
-  const publicMetadata = await requestWithHost(baseUrl, "board.example.test", {}, "/api/meta");
-  assert.equal(publicMetadata.status, 200);
-  assert.deepEqual(publicMetadata.body, metadata.body);
-
-  for (const pathname of [
-    "/api/local/host-runtime",
-    "/api/local/jira-connection",
-    "/api/local/ai/catalog?projectId=local",
-    "/api/device-workspaces",
-    "/api/projects/local/development-contexts",
-  ]) {
-    const result = await request(baseUrl, pathname, trustedRequest);
-    assert.equal(result.response.status, 409, pathname);
-    assert.equal(result.body.error.code, "LOCAL_COMPANION_REQUIRED", pathname);
-
-    const publicResult = await requestWithHost(baseUrl, "board.example.test", {}, pathname);
-    assert.equal(publicResult.status, 409, pathname);
-    assert.equal(publicResult.body.error.code, "LOCAL_COMPANION_REQUIRED", pathname);
-  }
-
-  const localMetadata = await request(baseUrl, "/api/meta");
-  assert.equal(localMetadata.response.status, 200);
-  assert.deepEqual(localMetadata.body, {
-    manageTaskboardSkillPath: skillPath,
-    capabilities: { localAiChat: true },
-    mode: "cloud",
-    realtime: {
-      transport: "websocket",
-      endpoint: "/api/events",
-    },
-    localCapabilities: { available: true },
-  });
-  assert.equal((await request(baseUrl, "/api/local/host-runtime")).response.status, 200);
-  assert.equal((await request(baseUrl, "/api/device-workspaces")).response.status, 200);
-});
-
-test("trusted HTTPS origins apply to cloud WebSocket upgrades without widening loopback routes", async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "codex-taskboard-trusted-origins-"));
-  const trustedOrigin = "https://board.example.test";
-  const upstreamServer = createServer();
-  const upstreamWebSockets = new WebSocketServer({ noServer: true });
-  upstreamServer.on("upgrade", (request, socket, head) => {
-    upstreamWebSockets.handleUpgrade(request, socket, head, () => {});
-  });
-  await new Promise((resolve) => upstreamServer.listen(0, "127.0.0.1", resolve));
-  const upstreamAddress = upstreamServer.address();
-  const app = createTaskboardServer({
-    dataDirectory: directory,
-    processEnv: { ...process.env, CODEX_TASKBOARD_TRUSTED_ORIGINS: trustedOrigin },
-    cloudConfigStore: {
-      async read() {
-        return {
-          remoteUrl: `http://127.0.0.1:${upstreamAddress.port}`,
-          actorName: "Test actor",
-          sharedKey: "test-shared-key",
-        };
-      },
-    },
-  });
-  const address = await app.listen({ host: "127.0.0.1", port: 0 });
-
-  try {
-    const url = `ws://127.0.0.1:${address.port}/api/events`;
-    for (const [host, origin, expectedStatus] of [
-      ["board.example.test", trustedOrigin, 101],
-      ["board.example.test", undefined, 101],
-      ["board.example.test", "https://other.example.test", 403],
-      ["other.example.test", trustedOrigin, 403],
-      ["127.0.0.1", trustedOrigin, 101],
-      ["127.0.0.1", undefined, 101],
-    ]) {
-      const headers = { host, ...(origin ? { origin } : {}) };
-      assert.equal(await openWebSocket(url, headers), expectedStatus);
-    }
-  } finally {
-    await app.close();
-    upstreamWebSockets.close();
-    await new Promise((resolve) => upstreamServer.close(resolve));
-    await rm(directory, { recursive: true, force: true });
-  }
 });
 
 test("trusted origin configuration rejects non-origin URLs", () => {
@@ -888,34 +717,6 @@ test("remote task bindings keep their own identity and can be cleared independen
   assert.equal(restored.threadId, null);
   assert.equal(restored.threadBinding, null);
   assert.deepEqual(restored.conversationRefs.map((ref) => ref.threadId), ["controller-thread"]);
-});
-
-test("the active local Codex conversation supplies its exact task binding identity", async () => {
-  const baseUrl = await startServer();
-  const runtime = await request(baseUrl, "/api/local/host-runtime", {
-    method: "PUT",
-    body: {
-      threadId: "local-thread",
-      threadRunning: true,
-      threadTodoProgress: null,
-      codexProjectId: "local-project",
-      codexProjectKind: "local",
-      codexHostId: "local",
-      workspacePath: "/work/local-project",
-    },
-  });
-  assert.equal(runtime.response.status, 200);
-  const task = (await request(baseUrl, "/api/tasks", {
-    method: "POST",
-    body: { title: "Local binding", threadId: "local-thread" },
-  })).body.task;
-  assert.deepEqual(task.threadBinding, {
-    threadId: "local-thread",
-    codexProjectId: "local-project",
-    codexProjectKind: "local",
-    codexHostId: "local",
-    workspacePath: "/work/local-project",
-  });
 });
 
 test("issues support parent, sub-issue, blocking, and related issue relationships", async () => {

@@ -90,46 +90,6 @@ test("local project moves reject related issues without mutating the task", asyn
   }
 });
 
-test("local project moves reject issue-linked AI chats and preserve their origin", async () => {
-  const fixture = await createFixture();
-  try {
-    createProject(fixture.database, "move-chat-source");
-    createProject(fixture.database, "move-chat-target");
-    const task = createTask(fixture.database, "move-chat-source", "Chat-linked source");
-    const thread = fixture.database.createAiChatThread({
-      id: "move-chat-thread",
-      title: "Issue conversation",
-      origin: {
-        projectId: "move-chat-source",
-        projectName: "MOVE-CHAT-SOURCE",
-        workspacePath: "/tmp/move-chat-source",
-        issueId: task.id,
-        issueIdentifier: task.identifier,
-      },
-      model: "gpt-real",
-      reasoningEffort: "medium",
-      sandbox: "workspace-write",
-    });
-
-    assert.throws(
-      () => fixture.database.updateTask(
-        task.id,
-        task.version,
-        { projectId: "move-chat-target" },
-        undefined,
-        undefined,
-        actor,
-      ),
-      (error) => error?.status === 409 && error?.code === "AI_CHAT_PROJECT_MOVE_BLOCKED",
-    );
-
-    assert.equal(fixture.database.getTask(task.id).projectId, "move-chat-source");
-    assert.deepEqual(fixture.database.getAiChatThread(thread.id).origin, thread.origin);
-  } finally {
-    await fixture.close();
-  }
-});
-
 test("local combined project and status updates use the target status ordering", async () => {
   const fixture = await createFixture();
   try {

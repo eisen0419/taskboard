@@ -1,30 +1,25 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import "./DashboardView.css";
 import dueDoneIcon from "../assets/figma-taskboard/dashboard-due-done.svg";
 import dueEditIcon from "../assets/figma-taskboard/dashboard-due-edit.svg";
 import processingAnimation from "../assets/figma-taskboard/loading-16.svg";
-import { getProjectSummary } from "../api";
 import { taskPriorityLabel, taskStatusLabel, useTaskboardI18n } from "../i18n";
 import { labelPresentation } from "../labels";
 import type {
   TaskCardPresentation,
   TaskConversationItem,
 } from "../taskConversations";
-import type { ActorIdentity, ProjectSummary, Task } from "../types";
+import type { Task } from "../types";
 import { ActorAvatar } from "./ActorAvatar";
 import { PriorityIcon } from "./SemanticIcons";
 import { TaskConversationMenu } from "./TaskConversationMenu";
 
 interface DashboardViewProps {
-  projectId: string;
   projectCreatedAt: string | null;
   isAllProjects: boolean;
   tasks: Task[];
   presentations: Record<string, TaskCardPresentation>;
-  currentUser: ActorIdentity;
-  animateSummary: boolean;
-  onSummaryAnimationStart: (projectId: string) => void;
   onOpenTask: (task: Task) => void;
   onOpenConversation: (conversation: TaskConversationItem) => void;
 }
@@ -164,67 +159,15 @@ function shortDate(value: string, locale: string) {
 }
 
 export function DashboardView({
-  projectId,
   projectCreatedAt,
   isAllProjects,
   tasks,
   presentations,
-  currentUser,
-  animateSummary,
-  onSummaryAnimationStart,
   onOpenTask,
   onOpenConversation,
 }: DashboardViewProps) {
   const { language, locale, text } = useTaskboardI18n();
-  const [projectSummary, setProjectSummary] = useState<ProjectSummary | null>(null);
-  const [summaryLoadFailed, setSummaryLoadFailed] = useState(false);
-  const [displayedSummary, setDisplayedSummary] = useState("");
-  const [summaryTyping, setSummaryTyping] = useState(true);
   const [progressHoverIndex, setProgressHoverIndex] = useState<number | null>(null);
-  const [animateSummaryOnMount] = useState(animateSummary);
-  const summaryAnimationStartedRef = useRef(false);
-  const summaryTypedRef = useRef(false);
-
-  useEffect(() => {
-    if (!animateSummaryOnMount || summaryAnimationStartedRef.current) return;
-    summaryAnimationStartedRef.current = true;
-    onSummaryAnimationStart(projectId);
-  }, [animateSummaryOnMount, onSummaryAnimationStart, projectId]);
-
-  useEffect(() => {
-    if (isAllProjects) {
-      setProjectSummary(null);
-      setSummaryLoadFailed(false);
-      return undefined;
-    }
-    let disposed = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const controller = new AbortController();
-    setProjectSummary(null);
-    setSummaryLoadFailed(false);
-
-    async function loadSummary() {
-      let delay = 60_000;
-      try {
-        const next = await getProjectSummary(projectId, controller.signal);
-        if (disposed) return;
-        setProjectSummary(next);
-        setSummaryLoadFailed(false);
-        if (next.refreshing) delay = 2_000;
-      } catch (error) {
-        if (disposed || (error instanceof Error && error.name === "AbortError")) return;
-        setSummaryLoadFailed(true);
-      }
-      if (!disposed) timer = setTimeout(loadSummary, delay);
-    }
-
-    void loadSummary();
-    return () => {
-      disposed = true;
-      controller.abort();
-      if (timer) clearTimeout(timer);
-    };
-  }, [isAllProjects, projectId]);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -428,79 +371,6 @@ export function DashboardView({
     },
   ];
 
-  const summaryBody = isAllProjects
-    ? text(
-        `所有项目共有 ${tasks.length} 个议题，${completedTasks.length} 个已完成，${activeTasks.length} 个尚未结束；当前 ${tasks.filter((task) => task.status === "blocked").length} 个遇到阻碍，${overdueTasks.length} 个已逾期。`,
-        `Across all projects, ${tasks.length} issues are tracked: ${completedTasks.length} completed and ${activeTasks.length} still open; ${tasks.filter((task) => task.status === "blocked").length} are blocked and ${overdueTasks.length} overdue.`,
-      )
-    : projectSummary?.summary
-      ?? (projectSummary?.refreshing
-        ? text(
-            "Codex 正在整理当前项目的进展、风险和下一步重点…",
-            "Codex is reviewing the project's progress, risks, and next steps…",
-          )
-        : summaryLoadFailed || projectSummary?.error
-          ? text("Codex 暂时无法生成项目总结。", "Codex cannot generate the project summary now.")
-          : text(
-              "Codex 正在整理当前项目的进展、风险和下一步重点…",
-              "Codex is reviewing the project's progress, risks, and next steps…",
-            ));
-  const hour = new Date().getHours();
-  const greeting = hour < 12
-    ? text("上午好", "Good morning")
-    : hour < 18
-      ? text("下午好", "Good afternoon")
-      : text("晚上好", "Good evening");
-  const summaryDate = new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(today);
-  const summary = text(
-    `${greeting}，${currentUser.name}，今天是${summaryDate}，${summaryBody}`,
-    `${greeting}, ${currentUser.name}. Today is ${summaryDate}. ${summaryBody}`,
-  );
-  const summaryReady = isAllProjects || projectSummary !== null || summaryLoadFailed;
-
-  useEffect(() => {
-    if (!summaryReady) {
-      setDisplayedSummary("");
-      setSummaryTyping(animateSummaryOnMount);
-      return undefined;
-    }
-
-    if (!animateSummaryOnMount || summaryTypedRef.current) {
-      setDisplayedSummary(summary);
-      setSummaryTyping(false);
-      return undefined;
-    }
-
-    const characters = Array.from(summary);
-    let index = 0;
-    let timer: ReturnType<typeof setTimeout>;
-    summaryTypedRef.current = true;
-    setDisplayedSummary("");
-    setSummaryTyping(true);
-
-    function typeNextCharacter() {
-      index += 1;
-      setDisplayedSummary(characters.slice(0, index).join(""));
-      if (index >= characters.length) {
-        setSummaryTyping(false);
-        return;
-      }
-
-      const character = characters[index - 1];
-      const delay = /[。！？]/.test(character)
-        ? 140
-        : /[，；：]/.test(character)
-          ? 80
-          : character === " "
-            ? 12
-            : 26;
-      timer = setTimeout(typeNextCharacter, delay);
-    }
-
-    timer = setTimeout(typeNextCharacter, 180);
-    return () => clearTimeout(timer);
-  }, [animateSummaryOnMount, projectId, summary, summaryReady]);
-
   return (
     <div className="dashboard-view">
       <div className="dashboard-content">
@@ -516,15 +386,6 @@ export function DashboardView({
             </div>
           </header>
 
-          <section className="dashboard-codex-summary" aria-label={text("Codex 项目总结", "Codex project summary")}>
-            <div className="dashboard-summary-bubble">
-              <p
-                className={summaryTyping ? "is-typing" : undefined}
-                aria-label={summaryReady ? summary : text("Codex 正在整理项目总结", "Codex is preparing the project summary")}
-              >{displayedSummary}</p>
-            </div>
-            <img className="dashboard-codex-mark" src="codex-agent-logo.png" alt="" aria-hidden="true" />
-          </section>
         </div>
 
         <div className="dashboard-metrics">

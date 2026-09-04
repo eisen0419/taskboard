@@ -7,7 +7,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { normalizeCloudUrl } from "../server/cloud-config.mjs";
 import {
   DEFAULT_PROJECT_ID,
   TASK_STATUSES,
@@ -32,11 +31,7 @@ const GLOBAL_OPTIONS = new Set(["runtime-file"]);
 const COMMAND_OPTIONS = new Map([
   ["project list", new Set(["json"])],
   ["project create", new Set(["id", "name", "workspace-path", "json"])],
-  ["project map", new Set(["workspace-path", "json"])],
   ["project readme", new Set(["content", "file", "if-version", "json"])],
-  ["cloud login", new Set(["url", "actor-name", "json"])],
-  ["cloud status", new Set(["json"])],
-  ["cloud logout", new Set(["json"])],
   ["issue list", new Set(["project", "status", "archived", "json"])],
   ["issue get", new Set(["json"])],
   [
@@ -126,11 +121,8 @@ Commands:
   context current [--cwd PATH] [--json]
   project list
   project create --name NAME [--id ID] [--workspace-path PATH]
-  project map PROJECT_ID --workspace-path PATH
   project readme get [PROJECT_ID]
   project readme set [PROJECT_ID] (--content TEXT | --file FILE) [--if-version N]
-  cloud login --url URL --actor-name NAME
-  cloud status|logout
   issue list|get|create|update|move|archive|restore|tree|relation
   comment list ISSUE_ID [--after CURSOR]
   comment add ISSUE_ID (--body TEXT | --body-file FILE) [--thread-id ID]
@@ -310,7 +302,7 @@ async function execute(parsed, overrides) {
   const allowedOptions = COMMAND_OPTIONS.get(command);
   if (!allowedOptions) {
     throw usageError(
-      "Expected one of: project list/create/map/readme, cloud login/status/logout, issue list/get/create/update/move/archive/restore/tree/relation, comment list/add/update/delete, attachment list/download/upload, context current",
+      "Expected one of: project list/create/readme, issue list/get/create/update/move/archive/restore/tree/relation, comment list/add/update/delete, attachment list/download/upload, context current",
     );
   }
   validateOptions(parsed.options, allowedOptions);
@@ -319,10 +311,7 @@ async function execute(parsed, overrides) {
   const env = parsed.options["runtime-file"] === undefined
     ? processEnv
     : { ...processEnv, CODEX_TASKBOARD_RUNTIME_FILE: parsed.options["runtime-file"] };
-  const usesCompanionControl = command.startsWith("cloud ") || command === "project map";
-  const target = usesCompanionControl || env.CODEX_TASKBOARD_COMPANION_URL !== undefined
-      ? await resolveCompanionUrl(env, overrides)
-      : await resolveTaskboardBaseUrl(env, overrides);
+  const target = await resolveTaskboardBaseUrl(env, overrides);
   const api = createApiClient(overrides, target);
   switch (command) {
     case "project list":
@@ -340,34 +329,8 @@ async function execute(parsed, overrides) {
             : resolveInputPath(parsed.options["workspace-path"], overrides),
         ),
       });
-    case "project map":
-      expectOperandCount(parsed, 1);
-      return api.request(
-        "PUT",
-        `/api/local/project-mappings/${encodeURIComponent(parsed.operands[0])}`,
-        {
-          workspacePath: resolveInputPath(
-            requiredOption(parsed.options, "workspace-path"),
-            overrides,
-          ),
-        },
-      );
     case "project readme":
       return executeProjectReadme(api, parsed, overrides);
-    case "cloud login":
-      expectOperandCount(parsed, 0);
-      return cloudLogin(
-        api,
-        requiredOption(parsed.options, "url"),
-        requiredOption(parsed.options, "actor-name"),
-        overrides,
-      );
-    case "cloud status":
-      expectOperandCount(parsed, 0);
-      return api.request("GET", "/api/local/cloud-session");
-    case "cloud logout":
-      expectOperandCount(parsed, 0);
-      return api.request("DELETE", "/api/local/cloud-session");
     case "issue list":
       expectOperandCount(parsed, 0);
       return listIssues(api, parsed.options);
@@ -776,75 +739,6 @@ async function executeProjectReadme(api, parsed, overrides) {
   }
 
   return api.request("GET", `/api/projects/${encodeURIComponent(projectId)}/readme`);
-}
-
-async function cloudLogin(api, rawUrl, actorName, overrides) {
-  let remoteUrl;
-  try {
-    remoteUrl = normalizeCloudUrl(rawUrl);
-  } catch (error) {
-    throw new TaskctlError(error instanceof Error ? error.message : String(error), {
-      code: error?.code ?? "INVALID_CLOUD_URL",
-      exitCode: 2,
-    });
-  }
-  const sharedKey = overrides.readSecret
-    ? await overrides.readSecret()
-    : await readSecretFromInput(
-      overrides.stdin ?? process.stdin,
-      overrides.stderr ?? process.stderr,
-    );
-  if (typeof sharedKey !== "string" || !sharedKey) {
-    throw usageError("Cloud shared key cannot be empty");
-  }
-  return api.request("PUT", "/api/local/cloud-session", {
-    remoteUrl,
-    actorName,
-    sharedKey,
-  });
-}
-
-async function readSecretFromInput(input, output) {
-  if (!input.isTTY) {
-    let value = "";
-    for await (const chunk of input) value += chunk;
-    return value.replace(/\r?\n$/, "");
-  }
-
-  return new Promise((resolve, reject) => {
-    let value = "";
-    const wasRaw = input.isRaw;
-    const wasPaused = input.isPaused();
-    const finish = (error) => {
-      input.off("data", onData);
-      input.setRawMode(wasRaw);
-      if (wasPaused) input.pause();
-      output.write("\n");
-      if (error) reject(error);
-      else resolve(value);
-    };
-    const onData = (chunk) => {
-      for (const character of String(chunk)) {
-        if (character === "\r" || character === "\n") return finish();
-        if (character === "\u0003") {
-          return finish(new TaskctlError("Cloud login canceled", {
-            code: "CANCELED",
-            exitCode: 2,
-          }));
-        }
-        if (character === "\u007f" || character === "\b") {
-          value = value.slice(0, -1);
-        } else {
-          value += character;
-        }
-      }
-    };
-    output.write("Shared key: ");
-    input.setRawMode(true);
-    input.setEncoding("utf8");
-    input.resume();
-    input.on("data", onData);
-  });
 }
 
 async function listIssues(api, options) {
@@ -1388,39 +1282,6 @@ async function fetchThroughWindows(url, init, overrides) {
     });
     child.stdin.end(init?.body);
   });
-}
-
-async function resolveCompanionUrl(env, overrides) {
-  const target = env.CODEX_TASKBOARD_COMPANION_URL !== undefined
-    ? { url: env.CODEX_TASKBOARD_COMPANION_URL, windowsTransport: false }
-    : await resolveTaskboardBaseUrl(env, overrides);
-  let url;
-  try {
-    url = new URL(target.url);
-  } catch {
-    throw usageError("Local companion URL must be a valid URL");
-  }
-  const isLoopback = url.hostname === "localhost"
-    || url.hostname === "127.0.0.1"
-    || url.hostname === "[::1]";
-  const instanceToken = url.pathname.replace(/^\//, "").replace(/\/$/, "");
-  const hasValidPathname = url.pathname === "/"
-    || (/^[a-z0-9-]{16,128}$/i.test(instanceToken) && !instanceToken.includes("/"));
-  if (
-    !isLoopback
-    || (url.protocol !== "http:" && url.protocol !== "https:")
-    || url.username
-    || url.password
-    || !hasValidPathname
-    || url.search
-    || url.hash
-  ) {
-    throw usageError("Local companion URL must be a loopback HTTP or HTTPS endpoint");
-  }
-  return {
-    url: url.toString().replace(/\/$/, ""),
-    windowsTransport: target.windowsTransport,
-  };
 }
 
 async function readResponse(response) {

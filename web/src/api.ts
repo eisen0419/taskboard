@@ -1,32 +1,16 @@
 import type {
   ActorIdentity,
-  AiChatCatalog,
-  AiChatAttachmentInput,
-  AiChatRun,
-  AiChatSandbox,
-  AiChatThread,
-  AiChatThreadSnapshot,
   Attachment,
   Comment,
-  ComposerCandidatesQuery,
-  ComposerCandidatesResponse,
-  ComposerRebindRequest,
-  ComposerRebindResponse,
-  ComposerTurnInput,
-  CodexProjectIdentity,
   CodexThreadBinding,
   DevelopmentScan,
-  HostContext,
   IssueRelationOrigin,
   IssueRelationType,
-  JiraConnection,
   Project,
   ProjectReadme,
   ProjectReadmeAttachment,
-  ProjectSummary,
   Task,
   TaskChangeActivity,
-  TaskboardMetadata,
   TaskDraft,
   TaskStatus,
 } from "./types";
@@ -40,10 +24,6 @@ const DEFAULT_USER_ACTOR: ActorIdentity = {
 
 let currentUserActor = DEFAULT_USER_ACTOR;
 let apiText = (_chinese: string, english: string) => english;
-
-export function setCurrentUserActor(actor?: ActorIdentity) {
-  currentUserActor = actor?.type === "user" ? actor : DEFAULT_USER_ACTOR;
-}
 
 export function setApiText(text: typeof apiText) {
   apiText = text;
@@ -73,12 +53,6 @@ export class ApiError extends Error {
 
 export function resolveTaskboardUrl(path: string): string {
   return new URL(path.replace(/^\//, ""), document.baseURI).href;
-}
-
-export function resolveTaskboardWebSocketUrl(path: string): string {
-  const url = new URL(resolveTaskboardUrl(path));
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return url.href;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -149,315 +123,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export async function listProjects(signal?: AbortSignal): Promise<Project[]> {
   const data = await request<{ projects: Project[] }>("/api/projects", { signal });
   return data.projects;
-}
-
-export async function getJiraConnection(signal?: AbortSignal): Promise<JiraConnection> {
-  try {
-    const data = await request<{ connection: JiraConnection }>("/api/local/jira-connection", { signal });
-    return data.connection;
-  } catch (error) {
-    if (
-      error instanceof ApiError
-      && (
-        error.code === "LOCAL_COMPANION_REQUIRED"
-        || (error.status === 403 && error.code === "LOCAL_ONLY")
-        || error.status === 404
-      )
-    ) {
-      return {
-        configured: false,
-        baseUrl: null,
-        username: null,
-        displayName: null,
-        projects: [],
-        projectId: "jira-my-tasks",
-        lastSyncedAt: null,
-        insecureHttp: false,
-      };
-    }
-    throw error;
-  }
-}
-
-export async function configureJiraConnection(input: {
-  baseUrl: string;
-  username: string;
-  password: string;
-  projects: string[];
-}): Promise<JiraConnection> {
-  const data = await request<{ connection: JiraConnection }>("/api/local/jira-connection", {
-    method: "PUT",
-    body: JSON.stringify(input),
-  });
-  return data.connection;
-}
-
-export async function syncJiraConnection(): Promise<JiraConnection> {
-  const data = await request<{ connection: JiraConnection }>("/api/local/jira-connection/sync", {
-    method: "POST",
-  });
-  return data.connection;
-}
-
-export async function getProjectSummary(
-  projectId: string,
-  signal?: AbortSignal,
-): Promise<ProjectSummary> {
-  return request<ProjectSummary>(
-    `/api/local/projects/${encodeURIComponent(projectId)}/summary`,
-    { signal },
-  );
-}
-
-export async function getTaskboardMetadata(signal?: AbortSignal): Promise<TaskboardMetadata> {
-  return request<TaskboardMetadata>("/api/meta", { signal });
-}
-
-export async function getTaskboardRevision(
-  since: number,
-  signal?: AbortSignal,
-): Promise<{ changed: boolean; revision: number }> {
-  const query = new URLSearchParams({ since: String(since) });
-  return request<{ changed: boolean; revision: number }>(`/api/revisions?${query}`, { signal });
-}
-
-export async function getHostRuntime(signal?: AbortSignal): Promise<HostContext | null> {
-  const data = await request<{
-    runtime: (Pick<HostContext, "threadId" | "threadRunning" | "threadTodoProgress"> & {
-      codexProjectId: string | null;
-      codexProjectKind: "local" | "remote" | null;
-      codexHostId: string | null;
-      workspacePath: string | null;
-      updatedAt: number;
-    }) | null;
-  }>("/api/local/host-runtime", { signal });
-  if (!data.runtime) return null;
-  const { codexProjectId, codexProjectKind, codexHostId, workspacePath } = data.runtime;
-  return {
-    threadId: data.runtime.threadId,
-    threadRunning: data.runtime.threadRunning,
-    threadTodoProgress: data.runtime.threadTodoProgress,
-    ...(codexProjectId && codexProjectKind && codexHostId && workspacePath
-      ? {
-          projectId: codexProjectId,
-          workspacePath,
-          projects: [{
-            id: codexProjectId,
-            name: codexProjectId,
-            projectKind: codexProjectKind,
-            workspacePath,
-            hostId: codexHostId,
-          }],
-        }
-      : {}),
-  };
-}
-
-export async function getCodexThreadProgress(
-  threadIds: string[],
-  signal?: AbortSignal,
-): Promise<Record<string, { completed: number | null; total: number | null; running: boolean } | null>> {
-  const query = new URLSearchParams();
-  for (const threadId of threadIds) query.append("threadId", threadId);
-  const data = await request<{
-    progress: Record<string, {
-      completed: number | null;
-      total: number | null;
-      running: boolean;
-    } | null>;
-  }>(`/api/local/codex-thread-progress?${query}`, { signal });
-  return data.progress;
-}
-
-export async function publishHostRuntime(context: HostContext): Promise<void> {
-  if (!context.threadId || context.threadRunning === undefined) return;
-  const project = context.projects?.find((candidate) => candidate.id === context.projectId);
-  await request("/api/local/host-runtime", {
-    method: "PUT",
-    body: JSON.stringify({
-      threadId: context.threadId,
-      threadRunning: context.threadRunning,
-      threadTodoProgress: context.threadTodoProgress ?? null,
-      codexProjectId: project?.id ?? null,
-      codexProjectKind: project?.projectKind ?? null,
-      codexHostId: project?.hostId ?? null,
-      workspacePath: project?.workspacePath ?? null,
-    }),
-  });
-}
-
-export async function getAiChatCatalog(
-  projectId: string,
-  signal?: AbortSignal,
-  codexProjectIdentity?: CodexProjectIdentity | null,
-): Promise<AiChatCatalog> {
-  const query = new URLSearchParams();
-  if (codexProjectIdentity) {
-    query.set("codexProjectId", codexProjectIdentity.codexProjectId);
-    query.set("codexProjectKind", codexProjectIdentity.codexProjectKind);
-    query.set("codexHostId", codexProjectIdentity.codexHostId);
-    query.set("workspacePath", codexProjectIdentity.workspacePath);
-  }
-  return request<AiChatCatalog>(
-    `/api/local/ai/catalog?projectId=${encodeURIComponent(projectId)}${query.size ? `&${query}` : ""}`,
-    { signal },
-  );
-}
-
-export async function getAiChatComposerCandidates(
-  input: ComposerCandidatesQuery,
-  signal?: AbortSignal,
-): Promise<ComposerCandidatesResponse> {
-  const query = new URLSearchParams({
-    trigger: input.trigger,
-    query: input.query,
-  });
-  if (input.projectId) query.set("projectId", input.projectId);
-  if (input.threadId) query.set("threadId", input.threadId);
-  if (input.surface) query.set("surface", input.surface);
-  if (input.codexProjectId) query.set("codexProjectId", input.codexProjectId);
-  if (input.codexProjectKind) query.set("codexProjectKind", input.codexProjectKind);
-  if (input.codexHostId) query.set("codexHostId", input.codexHostId);
-  if (input.workspacePath) query.set("workspacePath", input.workspacePath);
-  return request<ComposerCandidatesResponse>(`/api/local/ai/composer/candidates?${query}`, { signal });
-}
-
-export async function rebindAiChatComposerReferences(
-  input: ComposerRebindRequest,
-): Promise<ComposerRebindResponse> {
-  return request<ComposerRebindResponse>("/api/local/ai/composer/rebind", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-export async function listAiChatThreads(signal?: AbortSignal): Promise<AiChatThread[]> {
-  const data = await request<{ threads: AiChatThread[] }>("/api/local/ai/threads", { signal });
-  return data.threads;
-}
-
-export async function createAiChatThread(input: {
-  projectId: string;
-  issueId?: string;
-  title?: string;
-  model?: string;
-  reasoningEffort?: string;
-  sandbox?: AiChatSandbox;
-} & Partial<CodexProjectIdentity>): Promise<AiChatThread> {
-  const data = await request<{ thread: AiChatThread }>("/api/local/ai/threads", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-  return data.thread;
-}
-
-export async function getAiChatThread(
-  threadId: string,
-  signal?: AbortSignal,
-): Promise<AiChatThreadSnapshot> {
-  return request<AiChatThreadSnapshot>(
-    `/api/local/ai/threads/${encodeURIComponent(threadId)}`,
-    { signal },
-  );
-}
-
-export async function updateAiChatThread(
-  threadId: string,
-  input: {
-    title?: string;
-    model?: string;
-    reasoningEffort?: string;
-    sandbox?: AiChatSandbox;
-  },
-): Promise<AiChatThread> {
-  const data = await request<{ thread: AiChatThread }>(
-    `/api/local/ai/threads/${encodeURIComponent(threadId)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(input),
-    },
-  );
-  return data.thread;
-}
-
-export async function deleteAiChatThread(threadId: string): Promise<void> {
-  await request<void>(
-    `/api/local/ai/threads/${encodeURIComponent(threadId)}`,
-    { method: "DELETE" },
-  );
-}
-
-export async function startAiChatTurn(
-  threadId: string,
-  input: {
-    message: string;
-    skillIds?: string[];
-    attachments?: AiChatAttachmentInput[];
-    dangerFullAccessConfirmed?: boolean;
-  },
-): Promise<AiChatRun> {
-  const data = await request<{ run: AiChatRun }>(
-    `/api/local/ai/threads/${encodeURIComponent(threadId)}/turns`,
-    {
-      method: "POST",
-      body: JSON.stringify(input),
-    },
-  );
-  return data.run;
-}
-
-export async function startAiChatComposerTurn(
-  threadId: string,
-  input: ComposerTurnInput,
-): Promise<AiChatRun> {
-  const data = await request<{ run: AiChatRun }>(
-    `/api/local/ai/threads/${encodeURIComponent(threadId)}/turns`,
-    {
-      method: "POST",
-      body: JSON.stringify(input),
-    },
-  );
-  return data.run;
-}
-
-export async function interruptAiChatRun(runId: string): Promise<AiChatRun> {
-  const data = await request<{ run: AiChatRun }>(
-    `/api/local/ai/runs/${encodeURIComponent(runId)}/interrupt`,
-    { method: "POST" },
-  );
-  return data.run;
-}
-
-export async function compactAiChatThread(threadId: string): Promise<AiChatThread> {
-  const data = await request<{ thread: AiChatThread }>(
-    `/api/local/ai/threads/${encodeURIComponent(threadId)}/compact`,
-    { method: "POST" },
-  );
-  return data.thread;
-}
-
-export function subscribeAiChatThread(
-  threadId: string,
-  onHint: (type: "ai.event" | "ai.run") => void,
-  onError?: () => void,
-): () => void {
-  const source = new EventSource(
-    resolveTaskboardUrl(`/api/local/ai/threads/${encodeURIComponent(threadId)}/events`),
-  );
-  source.addEventListener("ai.event", () => onHint("ai.event"));
-  source.addEventListener("ai.run", () => onHint("ai.run"));
-  if (onError) source.addEventListener("error", onError);
-  return () => source.close();
-}
-
-export async function listDeviceWorkspaces(signal?: AbortSignal): Promise<Record<string, string>> {
-  try {
-    const data = await request<{ workspaces: Record<string, string> }>("/api/device-workspaces", { signal });
-    return data.workspaces;
-  } catch (error) {
-    if (error instanceof ApiError && error.code === "LOCAL_COMPANION_REQUIRED") return {};
-    throw error;
-  }
 }
 
 export async function getProjectReadme(

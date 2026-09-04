@@ -38,18 +38,10 @@ import { definitions } from "mdast-util-definitions";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
-import type {
-  Attachment,
-  ComposerCandidate,
-  ComposerCandidatesResponse,
-  ComposerSurface,
-  ComposerTrigger,
-  Task,
-} from "../types";
+import type { Attachment, Task } from "../types";
 import {
   attachmentContentUrl,
   attachmentDownloadUrl,
-  getAiChatComposerCandidates,
   resolvePersistedAttachmentUrl,
 } from "../api";
 import { useTaskboardI18n } from "../i18n";
@@ -68,6 +60,8 @@ import {
   type ComposerCompletionGroup,
 } from "./ComposerCompletionMenu";
 import "./InlineMediaComposer.css";
+
+type ComposerTrigger = "@";
 
 interface InlineTextSegment {
   id: string;
@@ -167,17 +161,10 @@ export interface InlineMediaComposerHandle {
   addFiles: (files: FileList | File[]) => void;
 }
 
-export interface InlineMediaCompletionContext {
-  projectId?: string;
-  threadId?: string;
-  surface: Exclude<ComposerSurface, "ai-chat">;
-}
-
 export interface InlineMediaComposerProps {
   segments: InlineMediaSegment[];
   mentionTasks?: readonly Task[];
   referenceTasks: readonly Task[];
-  completionContext?: InlineMediaCompletionContext;
   placeholder: string;
   ariaLabel: string;
   disabled?: boolean;
@@ -197,14 +184,10 @@ interface ComposerQuery {
   anchorRect: DOMRect;
 }
 
-type CompletionSelection =
-  | { type: "candidate"; candidate: ComposerCandidate }
-  | { type: "issue"; task: Task };
+type CompletionSelection = { type: "issue"; task: Task };
 
 function completionSelectionId(selection: CompletionSelection): string {
-  return selection.type === "candidate"
-    ? `candidate:${selection.candidate.kind}:${selection.candidate.candidateRef}`
-    : `issue:${selection.task.id}`;
+  return `issue:${selection.task.id}`;
 }
 
 let segmentSequence = 0;
@@ -1738,7 +1721,6 @@ function editorIsEmpty(documentNode: ProseMirrorNode): boolean {
 
 function completionQueryForView(
   view: EditorView,
-  completionContext: InlineMediaCompletionContext | undefined,
   mentionTaskCount: number,
 ): ComposerQuery | null {
   const { selection } = view.state;
@@ -1746,12 +1728,10 @@ function completionQueryForView(
     return null;
   }
   const prefix = selection.$from.parent.textBetween(0, selection.$from.parentOffset, "\n", "\ufffc");
-  const match = /(?:^|\s)([@/])([^\s@/]*)$/.exec(prefix);
+  const match = /(?:^|\s)(@)([^\s@]*)$/.exec(prefix);
   if (!match) return null;
   const trigger = match[1] as ComposerTrigger;
-  if ((trigger === "/" && !completionContext) || (
-    trigger === "@" && !completionContext && mentionTaskCount === 0
-  )) return null;
+  if (mentionTaskCount === 0) return null;
 
   const triggerOffset = match.index + match[0].lastIndexOf(trigger);
   const from = selection.$from.start() + triggerOffset;
@@ -1822,7 +1802,6 @@ export const InlineMediaComposer = forwardRef<InlineMediaComposerHandle, InlineM
     segments,
     mentionTasks = EMPTY_MENTION_TASKS,
     referenceTasks,
-    completionContext,
     placeholder,
     ariaLabel,
     disabled = false,
@@ -1840,12 +1819,10 @@ export const InlineMediaComposer = forwardRef<InlineMediaComposerHandle, InlineM
     const mermaidHosts = useRef(new Map<string, { host: HTMLElement; source: string }>());
     const editorSegments = useRef<InlineMediaSegment[]>(segments);
     const armedMediaAtom = useRef<string | null>(null);
-    const requestSequence = useRef(0);
     const disabledRef = useRef(disabled);
     const allowAttachmentsRef = useRef(allowAttachments);
     const mentionTasksRef = useRef(mentionTasks);
     const referenceTasksRef = useRef(referenceTasks);
-    const completionContextRef = useRef(completionContext);
     const onChangeRef = useRef(onChange);
     const onErrorRef = useRef(onError);
     const onKeyDownRef = useRef(onKeyDown);
@@ -1856,15 +1833,11 @@ export const InlineMediaComposer = forwardRef<InlineMediaComposerHandle, InlineM
     const completionSelectionsRef = useRef<CompletionSelection[]>([]);
     const selectedCompletionIndexRef = useRef(-1);
     const [activeCompletionId, setActiveCompletionId] = useState<string | null>(null);
-    const [completionResponse, setCompletionResponse] = useState<ComposerCandidatesResponse | null>(null);
-    const [completionLoading, setCompletionLoading] = useState(false);
-    const [completionError, setCompletionError] = useState<string | null>(null);
 
     disabledRef.current = disabled;
     allowAttachmentsRef.current = allowAttachments;
     mentionTasksRef.current = mentionTasks;
     referenceTasksRef.current = referenceTasks;
-    completionContextRef.current = completionContext;
     onChangeRef.current = onChange;
     onErrorRef.current = onError;
     onKeyDownRef.current = onKeyDown;
@@ -1879,23 +1852,9 @@ export const InlineMediaComposer = forwardRef<InlineMediaComposerHandle, InlineM
       ));
     }, [completionQuery, mentionTasks]);
 
-    const completionSelections = useMemo<CompletionSelection[]>(() => {
-      const candidates = completionResponse?.candidates.filter((candidate) => {
-        if (!candidate.selectable || candidate.trigger !== completionQuery?.trigger) return false;
-        if (candidate.kind === "slashAction") {
-          return candidate.selection?.type === "insertText"
-            && typeof candidate.selection.text === "string";
-        }
-        return candidate.persistence?.format === "taskboard.composer-reference.v1"
-          && candidate.persistence.kind === candidate.kind
-          && Boolean(candidate.persistence.referenceKey)
-          && Boolean(candidate.persistence.markdown);
-      }) ?? [];
-      return [
-        ...issueResults.map((task): CompletionSelection => ({ type: "issue", task })),
-        ...candidates.map((candidate): CompletionSelection => ({ type: "candidate", candidate })),
-      ];
-    }, [completionQuery?.trigger, completionResponse, issueResults]);
+    const completionSelections = useMemo<CompletionSelection[]>(() => (
+      issueResults.map((task) => ({ type: "issue", task }))
+    ), [issueResults]);
 
     const selectedCompletionIndex = completionSelections.length === 0
       ? -1
@@ -1908,48 +1867,19 @@ export const InlineMediaComposer = forwardRef<InlineMediaComposerHandle, InlineM
     completionSelectionsRef.current = completionSelections;
     selectedCompletionIndexRef.current = selectedCompletionIndex;
 
-    const completionGroups = useMemo<ComposerCompletionGroup[]>(() => {
-      const groups: ComposerCompletionGroup[] = [];
-      const groupsById = new Map<string, ComposerCompletionGroup>();
-      let selectableIndex = 0;
-      for (const selection of completionSelections) {
-        const candidate = selection.type === "candidate" ? selection.candidate : null;
-        const groupId = candidate ? `codex:${candidate.group}` : "taskboard:issues";
-        const groupLabel = candidate?.group ?? text("Taskboard 议题", "Taskboard issues");
-        let group = groupsById.get(groupId);
-        if (!group) {
-          group = { id: groupId, label: groupLabel, options: [] };
-          groups.push(group);
-          groupsById.set(groupId, group);
-        }
-        const task = selection.type === "issue" ? selection.task : null;
-        group.options.push({
+    const completionGroups = useMemo<ComposerCompletionGroup[]>(() => (
+      completionSelections.length === 0 ? [] : [{
+        id: "taskboard:issues",
+        label: text("Taskboard 议题", "Taskboard issues"),
+        options: completionSelections.map((selection, selectableIndex) => ({
           id: completionSelectionId(selection),
-          label: candidate?.kind === "slashAction"
-            ? candidate.command
-            : candidate?.label ?? task!.externalKey ?? task!.identifier,
-          description: candidate ? candidate.description : task!.title,
-          icon: candidate?.kind === "skill"
-            ? "project"
-            : candidate?.kind === "agent"
-              ? "conversation"
-              : candidate?.kind === "slashAction"
-                ? "action"
-                : "project",
+          label: selection.task.externalKey ?? selection.task.identifier,
+          description: selection.task.title,
+          icon: "project",
           selectableIndex,
-        });
-        selectableIndex += 1;
-      }
-      return groups;
-    }, [completionSelections, text]);
-
-    const completionDiagnostics = useMemo(() => (
-      completionResponse?.sources
-        .filter((source) => source.state !== "available")
-        .map((source) => `${source.kind}: ${source.state}${
-          source.reasonCode ? ` (${source.reasonCode})` : ""
-        }`) ?? []
-    ), [completionResponse]);
+        })),
+      }]
+    ), [completionSelections, text]);
 
     function editorAttributes(): Record<string, string> {
       return {
@@ -1974,7 +1904,6 @@ export const InlineMediaComposer = forwardRef<InlineMediaComposerHandle, InlineM
     function updateCompletion(view: EditorView): void {
       const next = completionQueryForView(
         view,
-        completionContextRef.current,
         mentionTasksRef.current.length,
       );
       const current = completionQueryRef.current;
@@ -2232,7 +2161,6 @@ export const InlineMediaComposer = forwardRef<InlineMediaComposerHandle, InlineM
       if (!view || !query || disabledRef.current) return;
       const freshQuery = completionQueryForView(
         view,
-        completionContextRef.current,
         mentionTasksRef.current.length,
       );
       if (
@@ -2242,53 +2170,17 @@ export const InlineMediaComposer = forwardRef<InlineMediaComposerHandle, InlineM
         || freshQuery.trigger !== query.trigger
       ) return;
 
-      if (selection.type === "candidate" && selection.candidate.kind === "slashAction") {
-        const insertedText = selection.candidate.selection?.type === "insertText"
-          ? selection.candidate.selection.text
-          : null;
-        if (insertedText === null) return;
-        const insertion = createInlineMediaSegments(insertedText, referenceTasksRef.current);
-        populateAtomSegments(atomSegments.current, insertion);
-        const insertionDocument = editorDocumentFromSegments(insertion);
-        const transaction = view.state.tr
-          .setSelection(TextSelection.create(view.state.doc, freshQuery.from, freshQuery.to))
-          .replaceSelection(Slice.maxOpen(insertionDocument.content))
-          .scrollIntoView();
-        view.dispatch(transaction);
-        closeCompletion();
-        view.focus();
-        return;
-      }
-
-      let reference: InlineMediaSegment | null = null;
-      if (selection.type === "issue") {
-        const task = selection.task;
-        const displayIdentifier = task.externalKey ?? task.identifier;
-        const route = new URLSearchParams({ project: task.projectId, issue: task.identifier });
-        reference = {
-          id: segmentId("issue"),
-          type: "issue-reference",
-          markdown: `[@${displayIdentifier}](?${route})`,
-          identifier: displayIdentifier,
-          projectId: task.projectId,
-          taskId: task.id,
-        };
-      } else {
-        const candidate = selection.candidate;
-        if (candidate.kind === "slashAction") return;
-        const persistence = candidate.persistence;
-        if (!persistence || persistence.kind !== candidate.kind) return;
-        const parsed = createInlineMediaSegments(persistence.markdown).filter(isAtomSegment);
-        const parsedReference = parsed.length === 1 && (
-          parsed[0].type === "skill-reference" || parsed[0].type === "agent-reference"
-        ) ? parsed[0] : null;
-        if (
-          !parsedReference
-          || parsedReference.type !== `${candidate.kind}-reference`
-          || parsedReference.referenceKey !== persistence.referenceKey
-        ) return;
-        reference = parsedReference;
-      }
+      const task = selection.task;
+      const displayIdentifier = task.externalKey ?? task.identifier;
+      const route = new URLSearchParams({ project: task.projectId, issue: task.identifier });
+      const reference: InlineMediaSegment = {
+        id: segmentId("issue"),
+        type: "issue-reference",
+        markdown: `[@${displayIdentifier}](?${route})`,
+        identifier: displayIdentifier,
+        projectId: task.projectId,
+        taskId: task.id,
+      };
 
       atomSegments.current.set(reference.id, reference);
       const atomNode = editorAtomNode(reference);
@@ -2488,50 +2380,8 @@ export const InlineMediaComposer = forwardRef<InlineMediaComposerHandle, InlineM
     }, [completionQuery?.query, completionQuery?.trigger]);
 
     useEffect(() => {
-      if (disabled || (!completionContext && mentionTasks.length === 0)) closeCompletion();
-    }, [completionContext, disabled, mentionTasks.length]);
-
-    useEffect(() => {
-      if (!completionQuery || !completionContext) {
-        requestSequence.current += 1;
-        setCompletionResponse(null);
-        setCompletionLoading(false);
-        setCompletionError(null);
-        return;
-      }
-      const controller = new AbortController();
-      const sequence = requestSequence.current + 1;
-      requestSequence.current = sequence;
-      setCompletionResponse(null);
-      setCompletionLoading(true);
-      setCompletionError(null);
-      void getAiChatComposerCandidates({
-        projectId: completionContext.projectId,
-        threadId: completionContext.threadId,
-        surface: completionContext.surface,
-        trigger: completionQuery.trigger,
-        query: completionQuery.query,
-      }, controller.signal).then((response) => {
-        if (requestSequence.current !== sequence) return;
-        setCompletionResponse(response);
-        setCompletionLoading(false);
-      }, (error: unknown) => {
-        if (controller.signal.aborted || requestSequence.current !== sequence) return;
-        setCompletionError(error instanceof Error ? error.message : text(
-          "补全来源暂时不可用",
-          "Completion sources are temporarily unavailable.",
-        ));
-        setCompletionLoading(false);
-      });
-      return () => controller.abort();
-    }, [
-      completionContext?.projectId,
-      completionContext?.surface,
-      completionContext?.threadId,
-      completionQuery?.query,
-      completionQuery?.trigger,
-      text,
-    ]);
+      if (disabled || mentionTasks.length === 0) closeCompletion();
+    }, [disabled, mentionTasks.length]);
 
     useImperativeHandle(ref, () => ({
       focus() {
@@ -2602,9 +2452,7 @@ export const InlineMediaComposer = forwardRef<InlineMediaComposerHandle, InlineM
         <div ref={editorElement} />
         {atomPortals}
         {mermaidPortals}
-        {completionQuery
-          && (completionLoading || completionError !== null || completionSelections.length > 0)
-          && (
+        {completionQuery && completionSelections.length > 0 && (
           <ComposerCompletionMenu
             anchor={completionQuery.anchor}
             anchorRect={completionQuery.anchorRect}
@@ -2621,9 +2469,9 @@ export const InlineMediaComposer = forwardRef<InlineMediaComposerHandle, InlineM
             }}
             groups={completionGroups}
             activeIndex={selectedCompletionIndex}
-            loading={completionLoading}
-            error={completionError}
-            emptyDiagnostics={completionDiagnostics}
+            loading={false}
+            error={null}
+            emptyDiagnostics={[]}
             onActiveIndexChange={(index) => {
               const selection = completionSelections[index];
               if (selection) setActiveCompletionId(completionSelectionId(selection));

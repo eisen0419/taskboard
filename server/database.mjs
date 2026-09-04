@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { DEFAULT_LABEL_NAMES, JIRA_PROJECT_ID } from "../shared/domain.mjs";
+import { DEFAULT_LABEL_NAMES } from "../shared/domain.mjs";
 
 const DEFAULT_PROJECT_LABELS_JSON = JSON.stringify(DEFAULT_LABEL_NAMES);
 const TASK_TREE_MAX_NODES = 1_000;
@@ -205,26 +205,6 @@ function relationActivityValue(type, task) {
   };
 }
 
-function parseAiChatTodoProgress(row) {
-  try {
-    const data = row.data === null ? null : JSON.parse(row.data);
-    const detail = typeof data?.detail === "string" ? JSON.parse(data.detail) : data?.detail;
-    if (!Array.isArray(detail)) return null;
-    const items = detail.filter((item) => (
-      item && typeof item === "object" && typeof item.text === "string" && item.text.trim()
-    ));
-    if (items.length === 0) return null;
-    return {
-      completed: items.filter((item) => item.completed === true).length,
-      total: items.length,
-      eventId: row.id,
-      updatedAt: row.created_at,
-    };
-  } catch {
-    return null;
-  }
-}
-
 function taskFromRow(row) {
   const developmentContext = row.worktree_path
     ? { type: "worktree", path: row.worktree_path, branch: row.worktree_branch }
@@ -260,7 +240,7 @@ function taskFromRow(row) {
     recurrence: row.recurrence_interval && row.recurrence_unit
       ? { interval: row.recurrence_interval, unit: row.recurrence_unit }
       : null,
-    source: row.external_source === "jira" ? "jira" : "local",
+    source: "local",
     externalOrigin: row.external_origin ?? null,
     externalKey: row.external_key ?? null,
     externalUrl: row.external_url ?? null,
@@ -347,21 +327,11 @@ function projectFromRow(row) {
     id: row.id,
     name: row.name,
     workspacePath: row.workspace_path,
-    source: row.id === JIRA_PROJECT_ID ? "jira" : "local",
+    source: "local",
     labels: JSON.parse(row.labels),
     issueCount: Number(row.issue_count ?? 0),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
-}
-
-function projectSummaryFromRow(row) {
-  return {
-    projectId: row.project_id,
-    summary: row.summary,
-    generatedAt: row.generated_at,
-    attemptedAt: row.attempted_at,
-    error: row.error,
   };
 }
 
@@ -387,57 +357,6 @@ function projectReadmeAttachmentFromRow(row) {
   };
 }
 
-function aiChatRunFromRow(row) {
-  return {
-    id: row.id,
-    threadId: row.thread_id,
-    status: row.status,
-    exitCode: row.exit_code,
-    error: row.error,
-    startedAt: row.started_at,
-    finishedAt: row.finished_at,
-  };
-}
-
-function aiChatThreadFromRow(row) {
-  return {
-    id: row.id,
-    title: row.title,
-    status: row.status,
-    origin: {
-      projectId: row.origin_project_id,
-      projectName: row.origin_project_name,
-      workspacePath: row.origin_workspace_path,
-      ...(row.origin_codex_project_id ? { codexProjectId: row.origin_codex_project_id } : {}),
-      ...(row.origin_codex_project_kind ? { codexProjectKind: row.origin_codex_project_kind } : {}),
-      ...(row.origin_codex_host_id ? { codexHostId: row.origin_codex_host_id } : {}),
-      ...(row.origin_issue_id ? { issueId: row.origin_issue_id } : {}),
-      ...(row.origin_issue_identifier ? { issueIdentifier: row.origin_issue_identifier } : {}),
-    },
-    codexThreadId: row.codex_thread_id,
-    model: row.model,
-    reasoningEffort: row.reasoning_effort,
-    sandbox: row.sandbox,
-    currentRun: null,
-    latestTodo: null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function aiChatEventFromRow(row) {
-  return {
-    id: row.id,
-    threadId: row.thread_id,
-    runId: row.run_id,
-    type: row.type,
-    role: row.role,
-    content: row.content,
-    data: row.data === null ? null : JSON.parse(row.data),
-    createdAt: row.created_at,
-  };
-}
-
 function projectPrefix(project) {
   const idPrefix = project.id.toUpperCase().replace(/[^A-Z0-9]+/g, "").slice(0, 12) || "TASK";
   const existingPrefix = project.first_identifier?.replace(/-\d+$/, "");
@@ -453,7 +372,6 @@ export class TaskboardDatabase {
     this.database = new DatabaseSync(filename);
     this.database.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
     this.#migrate();
-    this.interruptAbandonedAiChatRuns();
   }
 
   #migrate() {
@@ -587,88 +505,11 @@ export class TaskboardDatabase {
         created_at TEXT NOT NULL
       );
 
-      CREATE TABLE IF NOT EXISTS project_summaries (
-        project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
-        summary TEXT,
-        generated_at TEXT,
-        attempted_at TEXT NOT NULL,
-        error TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS ai_chat_threads (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('idle', 'running', 'failed')),
-        origin_project_id TEXT NOT NULL,
-        origin_project_name TEXT NOT NULL,
-        origin_workspace_path TEXT NOT NULL,
-        origin_codex_project_id TEXT,
-        origin_codex_project_kind TEXT,
-        origin_codex_host_id TEXT,
-        origin_issue_id TEXT,
-        origin_issue_identifier TEXT,
-        codex_thread_id TEXT,
-        model TEXT NOT NULL,
-        reasoning_effort TEXT NOT NULL,
-        sandbox TEXT NOT NULL CHECK (sandbox IN (
-          'read-only', 'workspace-write', 'danger-full-access'
-        )),
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS ai_chat_threads_updated
-        ON ai_chat_threads(updated_at DESC, id);
-
-      CREATE TABLE IF NOT EXISTS ai_chat_runs (
-        id TEXT PRIMARY KEY,
-        thread_id TEXT NOT NULL REFERENCES ai_chat_threads(id) ON DELETE CASCADE,
-        status TEXT NOT NULL CHECK (status IN (
-          'running', 'completed', 'failed', 'interrupted'
-        )),
-        exit_code INTEGER,
-        error TEXT,
-        started_at TEXT NOT NULL,
-        finished_at TEXT
-      );
-
-      CREATE INDEX IF NOT EXISTS ai_chat_runs_thread_started
-        ON ai_chat_runs(thread_id, started_at, id);
-
-      CREATE UNIQUE INDEX IF NOT EXISTS ai_chat_runs_one_active
-        ON ai_chat_runs(thread_id)
-        WHERE status = 'running';
-
-      CREATE TABLE IF NOT EXISTS ai_chat_events (
-        id TEXT PRIMARY KEY,
-        thread_id TEXT NOT NULL REFERENCES ai_chat_threads(id) ON DELETE CASCADE,
-        run_id TEXT REFERENCES ai_chat_runs(id) ON DELETE CASCADE,
-        type TEXT NOT NULL,
-        role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'activity', 'error')),
-        content TEXT NOT NULL,
-        data TEXT,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS ai_chat_events_thread_created
-        ON ai_chat_events(thread_id, created_at, id);
-
     `);
 
     const projectColumns = this.database.prepare("PRAGMA table_info(projects)").all();
     if (!projectColumns.some((column) => column.name === "workspace_path")) {
       this.database.exec("ALTER TABLE projects ADD COLUMN workspace_path TEXT");
-    }
-
-    const aiChatThreadColumns = this.database.prepare("PRAGMA table_info(ai_chat_threads)").all();
-    for (const column of [
-      "origin_codex_project_id",
-      "origin_codex_project_kind",
-      "origin_codex_host_id",
-    ]) {
-      if (!aiChatThreadColumns.some((candidate) => candidate.name === column)) {
-        this.database.exec(`ALTER TABLE ai_chat_threads ADD COLUMN ${column} TEXT`);
-      }
     }
 
     const taskColumns = this.database.prepare("PRAGMA table_info(tasks)").all();
@@ -1137,214 +978,6 @@ export class TaskboardDatabase {
     return this.getProject(input.id);
   }
 
-  ensureJiraProject(name) {
-    const timestamp = now();
-    this.database.prepare(`
-      INSERT INTO projects (id, name, workspace_path, next_task_number, created_at, updated_at)
-      VALUES (?, ?, NULL, 1, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at
-    `).run(JIRA_PROJECT_ID, name, timestamp, timestamp);
-    return this.database.prepare(`
-      SELECT
-        projects.id,
-        projects.name,
-        projects.workspace_path,
-        projects.created_at,
-        projects.updated_at,
-        COUNT(tasks.id) AS issue_count
-      FROM projects
-      LEFT JOIN tasks ON tasks.project_id = projects.id AND tasks.archived_at IS NULL
-      WHERE projects.id = ?
-      GROUP BY projects.id
-    `).get(JIRA_PROJECT_ID);
-  }
-
-  syncJiraTasks(issues, { archiveMissing = true, projectName, legacyIdentity = null } = {}) {
-    const timestamp = now();
-    const seenTaskIds = new Set();
-    const projectLabels = JSON.stringify([
-      ...new Set(issues.flatMap((issue) => issue.labels)),
-    ]);
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
-      this.database.prepare(`
-        INSERT INTO projects (id, name, workspace_path, labels, next_task_number, created_at, updated_at)
-        VALUES (?, ?, NULL, ?, 1, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          name = excluded.name,
-          labels = excluded.labels,
-          updated_at = excluded.updated_at
-      `).run(JIRA_PROJECT_ID, projectName, projectLabels, timestamp, timestamp);
-      const findExisting = this.database.prepare(`
-        SELECT * FROM tasks
-        WHERE external_source = 'jira' AND external_origin = ? AND external_id = ?
-      `);
-      const migrateLegacyIdentity = this.database.prepare(`
-        UPDATE tasks SET
-          identifier = ?, external_origin = ?, external_id = ?, external_key = ?
-        WHERE id = ?
-      `);
-      if (legacyIdentity) {
-        const legacyTasks = this.database.prepare(`
-          SELECT id, identifier, external_id
-          FROM tasks
-          WHERE project_id = ?
-            AND external_source = 'jira'
-            AND external_origin IS NULL
-            AND substr(external_id, 1, 17) = ?
-            AND id = 'jira:' || external_id
-        `).all(JIRA_PROJECT_ID, `${legacyIdentity.urlHash}:`);
-        for (const legacyTask of legacyTasks) {
-          const externalId = legacyTask.external_id.slice(17);
-          migrateLegacyIdentity.run(
-            `JIRA:${legacyIdentity.originId.toUpperCase()}:${externalId}`,
-            legacyIdentity.originId,
-            externalId,
-            legacyTask.identifier,
-            legacyTask.id,
-          );
-        }
-      }
-      const insertTask = this.database.prepare(`
-        INSERT INTO tasks (
-          id, identifier, project_id, title, description, status, priority, labels,
-          sort_order, thread_id, thread_codex_project_id, thread_codex_project_kind,
-          thread_codex_host_id, thread_workspace_path,
-          creator_type, creator_id, creator_name, creator_avatar_url,
-          assignee_type, assignee_id, assignee_name, assignee_avatar_url,
-          git_branch, worktree_path, worktree_branch,
-          start_date, due_date, recurrence_interval, recurrence_unit,
-          external_source, external_origin, external_id, external_key, external_url,
-          archived_at, version, created_at, updated_at
-        ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, NULL, NULL, NULL, NULL, NULL,
-          ?, ?, ?, ?,
-          ?, ?, ?, ?,
-          NULL, NULL, NULL,
-          NULL, ?, NULL, NULL,
-          'jira', ?, ?, ?, ?,
-          NULL, 1, ?, ?
-        )
-      `);
-      const updateTask = this.database.prepare(`
-        UPDATE tasks SET
-          identifier = ?, title = ?, description = ?, status = ?, priority = ?, labels = ?,
-          sort_order = ?, creator_type = ?, creator_id = ?, creator_name = ?, creator_avatar_url = ?,
-          assignee_type = ?, assignee_id = ?, assignee_name = ?, assignee_avatar_url = ?,
-          due_date = ?, external_origin = ?, external_id = ?, external_key = ?, external_url = ?,
-          archived_at = NULL,
-          version = version + 1, updated_at = ?
-        WHERE id = ?
-      `);
-
-      for (const issue of issues) {
-        const existing = findExisting.get(issue.externalOrigin, issue.externalId);
-        seenTaskIds.add(existing?.id ?? issue.id);
-        const labels = JSON.stringify(issue.labels);
-        if (!existing) {
-          insertTask.run(
-            issue.id,
-            issue.identifier,
-            JIRA_PROJECT_ID,
-            issue.title,
-            issue.description,
-            issue.status,
-            issue.priority,
-            labels,
-            issue.sortOrder,
-            issue.creator.type,
-            issue.creator.id,
-            issue.creator.name,
-            issue.creator.avatarUrl,
-            issue.assignee.type,
-            issue.assignee.id,
-            issue.assignee.name,
-            issue.assignee.avatarUrl,
-            issue.dueDate,
-            issue.externalOrigin,
-            issue.externalId,
-            issue.externalKey,
-            issue.externalUrl,
-            issue.createdAt,
-            issue.updatedAt,
-          );
-          continue;
-        }
-
-        const changed = existing.identifier !== issue.identifier
-          || existing.title !== issue.title
-          || existing.description !== issue.description
-          || existing.status !== issue.status
-          || existing.priority !== issue.priority
-          || existing.labels !== labels
-          || existing.sort_order !== issue.sortOrder
-          || existing.creator_type !== issue.creator.type
-          || existing.creator_id !== issue.creator.id
-          || existing.creator_name !== issue.creator.name
-          || existing.creator_avatar_url !== issue.creator.avatarUrl
-          || existing.assignee_type !== issue.assignee.type
-          || existing.assignee_id !== issue.assignee.id
-          || existing.assignee_name !== issue.assignee.name
-          || existing.assignee_avatar_url !== issue.assignee.avatarUrl
-          || existing.due_date !== issue.dueDate
-          || existing.external_origin !== issue.externalOrigin
-          || existing.external_id !== issue.externalId
-          || existing.external_key !== issue.externalKey
-          || existing.external_url !== issue.externalUrl
-          || existing.archived_at !== null;
-        if (!changed) continue;
-        updateTask.run(
-          issue.identifier,
-          issue.title,
-          issue.description,
-          issue.status,
-          issue.priority,
-          labels,
-          issue.sortOrder,
-          issue.creator.type,
-          issue.creator.id,
-          issue.creator.name,
-          issue.creator.avatarUrl,
-          issue.assignee.type,
-          issue.assignee.id,
-          issue.assignee.name,
-          issue.assignee.avatarUrl,
-          issue.dueDate,
-          issue.externalOrigin,
-          issue.externalId,
-          issue.externalKey,
-          issue.externalUrl,
-          issue.updatedAt,
-          existing.id,
-        );
-      }
-
-      if (archiveMissing) {
-        const existingTasks = this.database.prepare(`
-          SELECT id FROM tasks
-          WHERE project_id = ? AND external_source = 'jira' AND archived_at IS NULL
-        `).all(JIRA_PROJECT_ID);
-        const archiveTask = this.database.prepare(`
-          UPDATE tasks
-          SET archived_at = ?, version = version + 1, updated_at = ?
-          WHERE id = ?
-        `);
-        for (const task of existingTasks) {
-          if (!seenTaskIds.has(task.id)) {
-            archiveTask.run(timestamp, timestamp, task.id);
-          }
-        }
-      }
-      this.database.prepare("UPDATE projects SET updated_at = ? WHERE id = ?")
-        .run(timestamp, JIRA_PROJECT_ID);
-      this.database.exec("COMMIT");
-    } catch (error) {
-      this.database.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
   deleteProject(id) {
     const project = this.getProject(id);
     if (!project) {
@@ -1446,57 +1079,6 @@ export class TaskboardDatabase {
     return this.getProject(projectId);
   }
 
-  getProjectSummary(projectId) {
-    const row = this.database.prepare(`
-      SELECT project_id, summary, generated_at, attempted_at, error
-      FROM project_summaries
-      WHERE project_id = ?
-    `).get(projectId);
-    return row ? projectSummaryFromRow(row) : {
-      projectId,
-      summary: null,
-      generatedAt: null,
-      attemptedAt: null,
-      error: null,
-    };
-  }
-
-  listProjectSummaries() {
-    return this.database.prepare(`
-      SELECT project_id, summary, generated_at, attempted_at, error
-      FROM project_summaries
-      ORDER BY project_id
-    `).all().map(projectSummaryFromRow);
-  }
-
-  saveProjectSummary(projectId, summary) {
-    const timestamp = now();
-    this.database.prepare(`
-      INSERT INTO project_summaries (
-        project_id, summary, generated_at, attempted_at, error
-      ) VALUES (?, ?, ?, ?, NULL)
-      ON CONFLICT(project_id) DO UPDATE SET
-        summary = excluded.summary,
-        generated_at = excluded.generated_at,
-        attempted_at = excluded.attempted_at,
-        error = NULL
-    `).run(projectId, summary, timestamp, timestamp);
-    return this.getProjectSummary(projectId);
-  }
-
-  saveProjectSummaryError(projectId, error) {
-    const timestamp = now();
-    this.database.prepare(`
-      INSERT INTO project_summaries (
-        project_id, summary, generated_at, attempted_at, error
-      ) VALUES (?, NULL, NULL, ?, ?)
-      ON CONFLICT(project_id) DO UPDATE SET
-        attempted_at = excluded.attempted_at,
-        error = excluded.error
-    `).run(projectId, timestamp, error);
-    return this.getProjectSummary(projectId);
-  }
-
   getProjectReadme(projectId) {
     if (!this.database.prepare("SELECT 1 FROM projects WHERE id = ?").get(projectId)) {
       throw new ApiError(404, "PROJECT_NOT_FOUND", `Project '${projectId}' does not exist`);
@@ -1578,285 +1160,6 @@ export class TaskboardDatabase {
       SELECT * FROM project_readme_attachments WHERE id = ?
     `).get(id);
     return row ? projectReadmeAttachmentFromRow(row) : null;
-  }
-
-  listAiChatThreads() {
-    const rows = this.database.prepare(`
-      SELECT * FROM ai_chat_threads
-      ORDER BY updated_at DESC, id
-    `).all();
-    if (rows.length === 0) return [];
-
-    const currentRuns = new Map();
-    for (const row of this.database.prepare(`
-      SELECT * FROM ai_chat_runs
-      WHERE status = 'running'
-      ORDER BY thread_id, started_at DESC, id DESC
-    `).all()) {
-      if (!currentRuns.has(row.thread_id)) currentRuns.set(row.thread_id, aiChatRunFromRow(row));
-    }
-
-    const latestTodos = new Map();
-    for (const row of this.database.prepare(`
-      SELECT id, thread_id, run_id, data, created_at
-      FROM ai_chat_events
-      WHERE type = 'todo_list'
-      ORDER BY thread_id, created_at DESC, rowid DESC
-    `).all()) {
-      if (latestTodos.has(row.thread_id)) continue;
-      const currentRun = currentRuns.get(row.thread_id);
-      if (currentRun && row.run_id !== currentRun.id) continue;
-      const progress = parseAiChatTodoProgress(row);
-      if (progress) latestTodos.set(row.thread_id, progress);
-    }
-
-    return rows.map((row) => {
-      const thread = aiChatThreadFromRow(row);
-      thread.currentRun = currentRuns.get(thread.id) ?? null;
-      thread.latestTodo = latestTodos.get(thread.id) ?? null;
-      return thread;
-    });
-  }
-
-  getAiChatThread(id) {
-    const row = this.database.prepare("SELECT * FROM ai_chat_threads WHERE id = ?").get(id);
-    return row ? this.#aiChatThreadWithCurrentRun(row) : null;
-  }
-
-  hasAiChatThreadProjectConflict(issueRef, projectId) {
-    return Boolean(this.database.prepare(`
-      SELECT 1
-      FROM ai_chat_threads
-      WHERE (origin_issue_id = ? OR origin_issue_identifier = ?)
-        AND origin_project_id != ?
-      LIMIT 1
-    `).get(issueRef, issueRef, projectId));
-  }
-
-  createAiChatThread(input) {
-    const id = input.id ?? randomUUID();
-    const timestamp = input.createdAt ?? now();
-    this.database.prepare(`
-      INSERT INTO ai_chat_threads (
-        id, title, status,
-        origin_project_id, origin_project_name, origin_workspace_path,
-        origin_codex_project_id, origin_codex_project_kind, origin_codex_host_id,
-        origin_issue_id, origin_issue_identifier,
-        codex_thread_id, model, reasoning_effort, sandbox,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      input.title,
-      input.status ?? "idle",
-      input.origin.projectId,
-      input.origin.projectName,
-      input.origin.workspacePath,
-      input.origin.codexProjectId ?? null,
-      input.origin.codexProjectKind ?? null,
-      input.origin.codexHostId ?? null,
-      input.origin.issueId ?? null,
-      input.origin.issueIdentifier ?? null,
-      input.codexThreadId ?? null,
-      input.model,
-      input.reasoningEffort,
-      input.sandbox,
-      timestamp,
-      input.updatedAt ?? timestamp,
-    );
-    return this.getAiChatThread(id);
-  }
-
-  updateAiChatThread(id, changes) {
-    const current = this.getAiChatThread(id);
-    if (!current) {
-      throw new ApiError(404, "AI_CHAT_THREAD_NOT_FOUND", `AI chat thread '${id}' does not exist`);
-    }
-    const columns = {
-      title: "title",
-      status: "status",
-      codexThreadId: "codex_thread_id",
-      model: "model",
-      reasoningEffort: "reasoning_effort",
-      sandbox: "sandbox",
-    };
-    const assignments = [];
-    const values = [];
-    for (const [key, column] of Object.entries(columns)) {
-      if (!Object.hasOwn(changes, key)) continue;
-      assignments.push(`${column} = ?`);
-      values.push(changes[key]);
-    }
-    if (assignments.length === 0) return current;
-    assignments.push("updated_at = ?");
-    values.push(changes.updatedAt ?? now(), id);
-    this.database.prepare(`
-      UPDATE ai_chat_threads SET ${assignments.join(", ")} WHERE id = ?
-    `).run(...values);
-    return this.getAiChatThread(id);
-  }
-
-  deleteAiChatThread(id) {
-    const current = this.getAiChatThread(id);
-    if (!current) {
-      throw new ApiError(404, "AI_CHAT_THREAD_NOT_FOUND", `AI chat thread '${id}' does not exist`);
-    }
-    this.database.prepare("DELETE FROM ai_chat_threads WHERE id = ?").run(id);
-    return current;
-  }
-
-  listAiChatRuns(threadId) {
-    return this.database.prepare(`
-      SELECT * FROM ai_chat_runs
-      WHERE thread_id = ?
-      ORDER BY started_at, id
-    `).all(threadId).map(aiChatRunFromRow);
-  }
-
-  getAiChatRun(id) {
-    const row = this.database.prepare("SELECT * FROM ai_chat_runs WHERE id = ?").get(id);
-    return row ? aiChatRunFromRow(row) : null;
-  }
-
-  createAiChatRun(input) {
-    const id = input.id ?? randomUUID();
-    const timestamp = input.startedAt ?? now();
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
-      this.database.prepare(`
-        INSERT INTO ai_chat_runs (
-          id, thread_id, status, exit_code, error, started_at, finished_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        id,
-        input.threadId,
-        input.status ?? "running",
-        input.exitCode ?? null,
-        input.error ?? null,
-        timestamp,
-        input.finishedAt ?? null,
-      );
-      if ((input.status ?? "running") === "running") {
-        this.database.prepare(`
-          UPDATE ai_chat_threads
-          SET status = 'running', updated_at = ?
-          WHERE id = ?
-        `).run(timestamp, input.threadId);
-      }
-      this.database.exec("COMMIT");
-    } catch (error) {
-      this.database.exec("ROLLBACK");
-      throw error;
-    }
-    return this.getAiChatRun(id);
-  }
-
-  updateAiChatRun(id, changes) {
-    const current = this.getAiChatRun(id);
-    if (!current) {
-      throw new ApiError(404, "AI_CHAT_RUN_NOT_FOUND", `AI chat run '${id}' does not exist`);
-    }
-    const columns = {
-      status: "status",
-      exitCode: "exit_code",
-      error: "error",
-      finishedAt: "finished_at",
-    };
-    const assignments = [];
-    const values = [];
-    for (const [key, column] of Object.entries(columns)) {
-      if (!Object.hasOwn(changes, key)) continue;
-      assignments.push(`${column} = ?`);
-      values.push(changes[key]);
-    }
-    if (assignments.length === 0) return current;
-
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
-      values.push(id);
-      this.database.prepare(`
-        UPDATE ai_chat_runs SET ${assignments.join(", ")} WHERE id = ?
-      `).run(...values);
-      const status = changes.status ?? current.status;
-      if (status !== "running") {
-        const threadStatus = status === "failed" ? "failed" : "idle";
-        this.database.prepare(`
-          UPDATE ai_chat_threads
-          SET status = ?, updated_at = ?
-          WHERE id = ?
-            AND NOT EXISTS (
-              SELECT 1 FROM ai_chat_runs
-              WHERE thread_id = ? AND status = 'running'
-            )
-        `).run(threadStatus, changes.finishedAt ?? now(), current.threadId, current.threadId);
-      }
-      this.database.exec("COMMIT");
-    } catch (error) {
-      this.database.exec("ROLLBACK");
-      throw error;
-    }
-    return this.getAiChatRun(id);
-  }
-
-  insertAiChatEvent(input) {
-    const id = input.id ?? randomUUID();
-    const timestamp = input.createdAt ?? now();
-    this.database.prepare(`
-      INSERT INTO ai_chat_events (
-        id, thread_id, run_id, type, role, content, data, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      input.threadId,
-      input.runId ?? null,
-      input.type,
-      input.role,
-      input.content,
-      input.data === undefined || input.data === null ? null : JSON.stringify(input.data),
-      timestamp,
-    );
-    const row = this.database.prepare("SELECT * FROM ai_chat_events WHERE id = ?").get(id);
-    return aiChatEventFromRow(row);
-  }
-
-  listAiChatEvents(threadId) {
-    return this.database.prepare(`
-      SELECT * FROM ai_chat_events
-      WHERE thread_id = ?
-      ORDER BY created_at, rowid
-    `).all(threadId).map(aiChatEventFromRow);
-  }
-
-  interruptAbandonedAiChatRuns() {
-    const timestamp = now();
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
-      const result = this.database.prepare(`
-        UPDATE ai_chat_runs
-        SET
-          status = 'interrupted',
-          error = COALESCE(error, 'Taskboard service restarted'),
-          finished_at = COALESCE(finished_at, ?)
-        WHERE status = 'running'
-      `).run(timestamp);
-      if (result.changes > 0) {
-        this.database.prepare(`
-          UPDATE ai_chat_threads
-          SET status = 'idle', updated_at = ?
-          WHERE status = 'running'
-            AND NOT EXISTS (
-              SELECT 1 FROM ai_chat_runs
-              WHERE ai_chat_runs.thread_id = ai_chat_threads.id
-                AND ai_chat_runs.status = 'running'
-            )
-        `).run(timestamp);
-      }
-      this.database.exec("COMMIT");
-      return Number(result.changes);
-    } catch (error) {
-      this.database.exec("ROLLBACK");
-      throw error;
-    }
   }
 
   listTasks(filters) {
@@ -2101,13 +1404,6 @@ export class TaskboardDatabase {
           409,
           "CROSS_PROJECT_RELATION",
           "Remove issue relations before moving the issue to another project",
-        );
-      }
-      if (this.hasAiChatThreadProjectConflict(current.id, targetProject.id)) {
-        throw new ApiError(
-          409,
-          "AI_CHAT_PROJECT_MOVE_BLOCKED",
-          "Delete issue-linked AI conversations before moving the issue to another project",
         );
       }
     }
@@ -2730,28 +2026,6 @@ export class TaskboardDatabase {
     const comment = commentFromRow(row);
     comment.attachments = this.#attachmentsForComment(comment.id);
     return comment;
-  }
-
-  #aiChatThreadWithCurrentRun(row) {
-    const thread = aiChatThreadFromRow(row);
-    const currentRun = this.database.prepare(`
-      SELECT * FROM ai_chat_runs
-      WHERE thread_id = ? AND status = 'running'
-      ORDER BY started_at DESC, id DESC
-      LIMIT 1
-    `).get(thread.id);
-    thread.currentRun = currentRun ? aiChatRunFromRow(currentRun) : null;
-    const todoRows = this.database.prepare(`
-      SELECT id, thread_id, run_id, data, created_at
-      FROM ai_chat_events
-      WHERE thread_id = ? AND type = 'todo_list'
-      ORDER BY created_at DESC, rowid DESC
-    `).all(thread.id);
-    thread.latestTodo = todoRows
-      .filter((row) => !thread.currentRun || row.run_id === thread.currentRun.id)
-      .map(parseAiChatTodoProgress)
-      .find(Boolean) ?? null;
-    return thread;
   }
 
   #commentsForTaskActivity(taskIds) {

@@ -536,7 +536,6 @@ export function TaskEditor({
               segments={descriptionSegments}
               mentionTasks={tasks}
               referenceTasks={referenceTasks}
-              completionContext={projectId ? { projectId, surface: "issue-description" } : undefined}
               placeholder={text("添加描述…", "Add description…")}
               ariaLabel={text("描述", "Description")}
               disabled={saving}

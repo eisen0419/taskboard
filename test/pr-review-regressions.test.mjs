@@ -6,10 +6,6 @@ const databaseSource = await readFile(
   new URL("../server/database.mjs", import.meta.url),
   "utf8",
 );
-const cloudSource = await readFile(
-  new URL("../cloud/src/index.mjs", import.meta.url),
-  "utf8",
-);
 const styles = await readFile(
   new URL("../web/src/styles.css", import.meta.url),
   "utf8",
@@ -34,18 +30,7 @@ test("task list activity queries project metadata while detail routes retain ful
     "  listTaskActivities(taskId)",
     "  listComments(taskId)",
   );
-  const cloudListQuery = between(
-    cloudSource,
-    "async function taskActivitiesForTasks(env, taskIds)",
-    "function parseProjectCreate(body)",
-  );
-  const cloudDetailQuery = between(
-    cloudSource,
-    "async function listTaskActivities(env, taskId)",
-    "async function listComments(env, taskId)",
-  );
-
-  for (const listQuery of [localListQuery, cloudListQuery]) {
+  for (const listQuery of [localListQuery]) {
     assert.match(
       listQuery,
       /SELECT\s+id, task_id, actor_type, actor_id, actor_name, actor_avatar_url, created_at\s+FROM task_activities/s,
@@ -53,7 +38,7 @@ test("task list activity queries project metadata while detail routes retain ful
     assert.doesNotMatch(listQuery, /SELECT \* FROM task_activities/);
     assert.doesNotMatch(listQuery, /\bchanges\b/);
   }
-  for (const detailQuery of [localDetailQuery, cloudDetailQuery]) {
+  for (const detailQuery of [localDetailQuery]) {
     assert.match(detailQuery, /SELECT \* FROM task_activities/);
     assert.match(detailQuery, /taskActivityFromRow/);
   }

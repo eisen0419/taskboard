@@ -66,7 +66,6 @@ import {
   EditIcon,
   LabelIcon,
   MoreIcon,
-  NewConversationIcon,
   PriorityIcon,
   ProjectIcon,
   RecurrenceIcon,
@@ -93,7 +92,6 @@ import {
 } from "./IssueRelations";
 import { TaskPropertyPicker } from "./TaskPropertyPicker";
 import { buildIssueUrl } from "../issueRoute";
-import { postEmbeddedHostMessage } from "../embeddedHost.mjs";
 import copyIdIcon from "../assets/figma-taskboard/copy-id.svg";
 import copyLinkIcon from "../assets/figma-taskboard/copy-link.svg";
 import { DescriptionDocument } from "./DescriptionDocument";
@@ -128,9 +126,7 @@ interface TaskDetailProps {
   ) => Promise<RelationMutationResult>;
   onOpenThread: (binding: CodexThreadBinding) => void;
   onOpenLegacyLocalThread: (threadId: string) => void;
-  onOpenInThread: (task: Task) => void;
   onCopy: (text: string, announcement: string) => void;
-  openingThread: boolean;
   onError: (message: TaskDetailError | null) => void;
 }
 
@@ -177,18 +173,6 @@ function resizeTextarea(element: HTMLTextAreaElement | null) {
 }
 
 async function downloadAttachmentFile(attachment: Attachment) {
-  const host = new URL(document.baseURI).searchParams.get("host");
-  if (host === "codex" && window.parent !== window) {
-    postEmbeddedHostMessage({
-      type: "taskboard:open-attachment",
-      payload: {
-        attachmentId: attachment.id,
-        filename: attachment.filename,
-      },
-    });
-    return;
-  }
-
   const response = await fetch(resolveTaskboardUrl(attachmentDownloadUrl(attachment)));
   if (!response.ok) {
     throw new ApiError(response.status, await response.json().catch(() => ({})));
@@ -387,9 +371,7 @@ export function TaskDetail({
   onRemoveRelation,
   onOpenThread,
   onOpenLegacyLocalThread,
-  onOpenInThread,
   onCopy,
-  openingThread,
   onError,
 }: TaskDetailProps) {
   const { language, locale, text } = useTaskboardI18n();
@@ -606,35 +588,7 @@ export function TaskDetail({
     const input = event.currentTarget.querySelector("input");
     if (!input || input.disabled) return;
     event.preventDefault();
-    if (new URL(document.baseURI).searchParams.get("host") !== "codex" || window.parent === window) {
-      input.showPicker();
-      return;
-    }
-
-    const requestId = crypto.randomUUID();
-    const rect = input.getBoundingClientRect();
-    function receiveDate(event: MessageEvent) {
-      if (event.source !== window.parent || event.data?.type !== "taskboard:date-picker-response") return;
-      const payload = event.data.payload;
-      if (payload?.requestId !== requestId || typeof payload.value !== "string") return;
-      window.removeEventListener("message", receiveDate);
-      const value = payload.value || null;
-      void saveTask(
-        field === "startDate"
-          ? { startDate: value }
-          : { dueDate: value, ...(value ? {} : { recurrence: null }) },
-        field,
-      );
-    }
-    window.addEventListener("message", receiveDate);
-    postEmbeddedHostMessage({
-      type: "taskboard:date-picker-request",
-      payload: {
-        requestId,
-        value: input.value,
-        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      },
-    });
+    input.showPicker();
   }
 
   async function applyRelationMutation(
@@ -1075,10 +1029,6 @@ export function TaskDetail({
                       segments={descriptionSegments}
                       mentionTasks={tasks}
                       referenceTasks={referenceTasks}
-                      completionContext={{
-                        projectId: currentTask.projectId,
-                        surface: "issue-description",
-                      }}
                       placeholder={text("添加描述…", "Add description…")}
                       ariaLabel={text("议题描述", "Issue description")}
                       disabled={savingProperty === "description"}
@@ -1413,10 +1363,6 @@ export function TaskDetail({
                             segments={editingSegments}
                             mentionTasks={tasks}
                             referenceTasks={referenceTasks}
-                            completionContext={{
-                              projectId: currentTask.projectId,
-                              surface: "comment",
-                            }}
                             placeholder={text("编辑评论", "Edit comment")}
                             ariaLabel={text("编辑评论", "Edit comment")}
                             disabled={savingCommentId === comment.id}
@@ -1536,10 +1482,6 @@ export function TaskDetail({
                   segments={commentSegments}
                   mentionTasks={tasks}
                   referenceTasks={referenceTasks}
-                  completionContext={{
-                    projectId: currentTask.projectId,
-                    surface: "comment",
-                  }}
                   placeholder={text("留下评论…", "Leave a comment…")}
                   ariaLabel={text("留下评论", "Leave a comment")}
                   allowAttachments
@@ -1605,17 +1547,6 @@ export function TaskDetail({
 
           <aside className="issue-properties" aria-label={text("议题属性", "Issue properties")}>
             <div className="detail-primary-actions">
-              <button
-                className="detail-open-thread-action"
-                type="button"
-                disabled={openingThread}
-                onClick={() => onOpenInThread(currentTask)}
-              >
-                <NewConversationIcon color="currentColor" />
-                <span>{openingThread
-                  ? text("正在打开…", "Opening…")
-                  : text("在新对话打开", "Open in new conversation")}</span>
-              </button>
               {currentTask.externalUrl && (
                 <a
                   className="detail-copy-action detail-external-action"
@@ -1626,7 +1557,7 @@ export function TaskDetail({
                   <span className="detail-copy-action-icon" aria-hidden="true">
                     <LinearIcon name="openExternal" />
                   </span>
-                  <span className="detail-copy-action-label">{text("打开 Jira", "Open Jira")}</span>
+                  <span className="detail-copy-action-label">{text("打开外部议题", "Open external issue")}</span>
                 </a>
               )}
               <button
@@ -1721,7 +1652,7 @@ export function TaskDetail({
                   icon: <ActorAvatar actor={actor} className="task-property-assignee-avatar" />,
                 }))}
                 open={propertyMenu === "assignee"}
-                disabled={currentTask.source === "jira" || savingProperty === "assignee"}
+                disabled={savingProperty === "assignee"}
                 className="detail-property-picker"
                 triggerClassName="detail-property-trigger"
                 ariaLabel={text("负责人", "Assignee")}
@@ -1752,7 +1683,7 @@ export function TaskDetail({
                 onOpenChange={(open) => setPropertyMenu(open ? "labels" : null)}
                 onChange={(nextLabels) => void saveTask({ labels: nextLabels }, "labels")}
                 onCreateLabel={onCreateLabel}
-                onDeleteLabel={currentTask.source === "jira" ? undefined : onDeleteLabel}
+                onDeleteLabel={onDeleteLabel}
               />
             </div>
             <div className="detail-property-row development-property">
