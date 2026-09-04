@@ -56,7 +56,7 @@ grep -cE 'ai_chat_|jira|JIRA' server/database.mjs shared/domain.mjs           # 
 
 ## 不许退化的既有断言
 
-- 保留的测试文件（`test/` 里清单之外的）一个不删、一条断言不改、不加 `.skip` / `.only`；`# fail 0`。
+- 保留的测试文件（`test/` 里清单之外的）**不整删**；只允许删**以被删面为对象**的用例、断言、import（被删面 = 验收①清单里的模块与路由），对象不是被删面的一字不动，不许把断言改成能过，不加 `.skip` / `.only`；某文件全部用例都以被删面为对象时可整删并在 report 写明「N/N」；report 逐条列「文件:行 → 删了什么 → 对应哪个被删面」（ESCALATION-67 D30）；`# fail 0`。
 - 看板 / 列表 / 甘特 / 项目文档四视图：不动 `BoardColumn` / `IssueListView` / `GanttView` / `ProjectReadmeView` 的行为；只删挂点。
 - 会话绑定（threadBinding）与 actor 归属逻辑保留；`taskctl issue create` 仍要求 `CODEX_THREAD_ID`（改名是 #2 的事）。
 - `/api/events` SSE 与 tasks / projects / comments / attachments / readme 路由形状不变。
@@ -64,7 +64,7 @@ grep -cE 'ai_chat_|jira|JIRA' server/database.mjs shared/domain.mjs           # 
 
 ## 验收口径
 
-- 计数一律「前 → 后」并列贴：110 → 0、34 → 0、22 → 0、58 → 0、373 → N（N = 保留用例数）。
+- 计数一律「前 → 后」并列贴：110 → 0、34 → 0、22 → 0、58 → 0、373 → N（N = 保留用例数；清单外测试里删掉的用例也计入下降，逐条列表见「不许退化」首条）。
 - 判「通过」一律 `cmd > log 2>&1; e=$?`；字面串 `grep -F`；数量 `grep -c`；本机 `grep` 是 ugrep。
 
 ## 出单自检
