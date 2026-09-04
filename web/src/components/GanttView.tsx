@@ -7,6 +7,7 @@ import { useTaskboardI18n } from "../i18n";
 import { LinearIcon } from "./LinearIcon";
 import { DueDateIcon } from "./SemanticIcons";
 import { taskboardIconSource } from "./TaskboardIcon";
+import agentAvatarIcon from "../assets/figma-taskboard/ai-launcher.svg";
 
 type GanttZoom = "day" | "week" | "month";
 
@@ -186,7 +187,7 @@ export function GanttView({ tasks, presentations, hasActiveFilters, zoom, hideCo
         ? `${ganttDate(start, i18nRef.current.locale)} — ${ganttDate(displayEnd, i18nRef.current.locale)}`
         : `${ganttDate(start, i18nRef.current.locale, true)} — ${ganttDate(displayEnd, i18nRef.current.locale, true)}`;
       const avatar = task.taskboardAssigneeType === "agent"
-        ? `<img src="codex-agent-logo.png" alt="">`
+        ? `<img src="${escapeHtml(agentAvatarIcon)}" alt="">`
         : task.taskboardAssigneeAvatarUrl
         ? `<img src="${escapeHtml(task.taskboardAssigneeAvatarUrl)}" alt="">`
         : `<span>${escapeHtml(task.taskboardAssigneeInitial)}</span>`;

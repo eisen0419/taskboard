@@ -13,23 +13,9 @@ function conversationSource(
   conversation: TaskConversationItem,
   text: (chinese: string, english: string) => string,
 ) {
-  if (conversation.kind === "local-ai") return text("内置 AI", "Built-in AI");
   return conversation.source === "comment"
     ? text("评论对话", "Comment conversation")
     : text("任务对话", "Task conversation");
-}
-
-function conversationStatus(
-  conversation: TaskConversationItem,
-  text: (chinese: string, english: string) => string,
-) {
-  if (conversation.currentRun?.status === "running") {
-    if (conversation.latestTodo?.total) {
-      return `${conversation.latestTodo.completed}/${conversation.latestTodo.total}`;
-    }
-    return text("正在处理", "Processing");
-  }
-  return conversation.kind === "local-ai" ? text("已暂停", "Paused") : "Codex";
 }
 
 export function TaskConversationMenu({
@@ -154,8 +140,8 @@ export function TaskConversationMenu({
                 <strong>{conversation.title}</strong>
                 <small>{conversationSource(conversation, text)}</small>
               </span>
-              <span className={`task-conversation-menu-status${conversation.currentRun?.status === "running" ? " is-running" : ""}`}>
-                {conversationStatus(conversation, text)}
+              <span className="task-conversation-menu-status">
+                Codex
               </span>
             </button>
           ))}

@@ -22,7 +22,6 @@ import {
   DeleteIcon,
   EditIcon,
   LabelIcon,
-  NewConversationIcon,
   PriorityIcon,
   StatusIcon,
 } from "./SemanticIcons";
@@ -40,8 +39,6 @@ interface TaskContextMenuProps {
   onLabelsChange: (task: Task, labels: string[]) => void;
   onDuplicate: (task: Task) => void;
   onCopy: (text: string, announcement: string) => void;
-  openInThreadDisabled?: boolean;
-  onOpenInThread: (task: Task) => void;
   onArchive: (task: Task) => void;
 }
 
@@ -112,8 +109,6 @@ export function TaskContextMenu({
   onLabelsChange,
   onDuplicate,
   onCopy,
-  openInThreadDisabled = false,
-  onOpenInThread,
   onArchive,
 }: TaskContextMenuProps) {
   const { language, text } = useTaskboardI18n();
@@ -382,14 +377,12 @@ export function TaskContextMenu({
           onPointerEnter={closeSubmenu}
           onClick={() => closeThen(() => onEdit(task))}
         />
-        {task.source !== "jira" && (
-          <MenuItem
-            label={text("创建副本", "Create copy")}
-            icon={<LinearIcon name="copy" />}
-            onPointerEnter={closeSubmenu}
-            onClick={() => closeThen(() => onDuplicate(task))}
-          />
-        )}
+        <MenuItem
+          label={text("创建副本", "Create copy")}
+          icon={<LinearIcon name="copy" />}
+          onPointerEnter={closeSubmenu}
+          onClick={() => closeThen(() => onDuplicate(task))}
+        />
         <MenuItem
           label={text("复制", "Copy")}
           icon={<LinearIcon name="copy" />}
@@ -424,30 +417,19 @@ export function TaskContextMenu({
             </div>
           )}
         </MenuItem>
-        <MenuItem
-          label={text("在新对话打开", "Open in new conversation")}
-          icon={<NewConversationIcon color="currentColor" size={16} />}
-          disabled={openInThreadDisabled}
-          onPointerEnter={closeSubmenu}
-          onClick={() => closeThen(() => onOpenInThread(task))}
-        />
       </div>
 
-      {task.source !== "jira" && (
-        <>
-          <div className="context-menu-divider" role="separator" />
-          <div className="context-menu-group">
-            <MenuItem
-              label={text("归档议题", "Archive issue")}
-              icon={<DeleteIcon color="currentColor" />}
-              shortcut="⌘⌫"
-              danger
-              onPointerEnter={closeSubmenu}
-              onClick={() => closeThen(() => onArchive(task))}
-            />
-          </div>
-        </>
-      )}
+      <div className="context-menu-divider" role="separator" />
+      <div className="context-menu-group">
+        <MenuItem
+          label={text("归档议题", "Archive issue")}
+          icon={<DeleteIcon color="currentColor" />}
+          shortcut="⌘⌫"
+          danger
+          onPointerEnter={closeSubmenu}
+          onClick={() => closeThen(() => onArchive(task))}
+        />
+      </div>
     </div>
   );
 

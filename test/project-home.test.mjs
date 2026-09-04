@@ -3,40 +3,11 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 const appSource = await readFile(new URL("../web/src/App.tsx", import.meta.url), "utf8");
-const apiSource = await readFile(new URL("../web/src/api.ts", import.meta.url), "utf8");
 const styles = await readFile(new URL("../web/src/styles.css", import.meta.url), "utf8");
 const editorSource = await readFile(new URL("../web/src/components/TaskEditor.tsx", import.meta.url), "utf8");
 const detailSource = await readFile(new URL("../web/src/components/TaskDetail.tsx", import.meta.url), "utf8");
 const labelPickerSource = await readFile(new URL("../web/src/components/LabelPicker.tsx", import.meta.url), "utf8");
 const labelsSource = await readFile(new URL("../web/src/labels.ts", import.meta.url), "utf8");
-
-test("the project switcher merges live Codex projects with persisted Taskboard projects", () => {
-  assert.match(appSource, /hostContext\?\.projects \?\? \[\]/);
-  assert.match(appSource, /persistedById/);
-  assert.match(appSource, /name: project\.id === GLOBAL_PROJECT_ID\s*\? text\("临时任务", "Temporary tasks"\)\s*: persistedById\.get\(project\.id\)\?\.name \?\? project\.name/);
-  assert.match(appSource, /for \(const project of projects\) \{[\s\S]*?inCodex: false,[\s\S]*?persisted: true/);
-  assert.match(appSource, /projectMenuChoices\.map\(\(project\) => \(/);
-  assert.match(appSource, /createProjectRequest/);
-  assert.match(apiSource, /export async function createProject/);
-});
-
-test("each device stores an independent workspace path for every project", () => {
-  assert.match(appSource, /const DEVICE_WORKSPACE_PATHS_KEY = "taskboard\.deviceWorkspacePaths\.v1"/);
-  assert.match(appSource, /function readDeviceWorkspacePaths\(\)/);
-  assert.match(appSource, /rememberDeviceWorkspacePath/);
-  assert.match(appSource, /const \[nextProjects, metadata, workspaces\] = await Promise\.all\(\[/);
-  assert.match(appSource, /listDeviceWorkspaces\(signal\)/);
-  assert.match(appSource, /const selectedDeviceWorkspacePath = selectedProjectId === GLOBAL_PROJECT_ID[\s\S]*?: deviceWorkspacePaths\[selectedProjectId\]/);
-  assert.match(appSource, /listDevelopmentContexts\([\s\S]*?selectedDeviceWorkspacePath,[\s\S]*?\)/);
-  assert.match(apiSource, /query\.set\("workspacePath", workspacePath\)/);
-  assert.match(apiSource, /\/api\/device-workspaces/);
-});
-
-test("imported Codex projects persist their exact device identity", () => {
-  assert.match(appSource, /const PROJECT_CODEX_IDENTITIES_KEY = "taskboard\.projectCodexIdentities\.v1"/);
-  assert.match(appSource, /codexProjectId: project\.id,[\s\S]*?codexProjectKind: project\.projectKind,[\s\S]*?codexHostId: project\.hostId,[\s\S]*?workspacePath: project\.workspacePath/);
-  assert.match(appSource, /setProjectCodexIdentities[\s\S]*?PROJECT_CODEX_IDENTITIES_KEY/);
-});
 
 test("project selection starts from the route or recent projects and updates the route", () => {
   assert.match(appSource, /const RECENT_PROJECT_IDS_KEY = "taskboard\.recentProjectIds\.v1"/);
@@ -93,7 +64,6 @@ test("issue creation selects a project only from all projects and keeps the curr
 test("the project header exposes project, automation, and create controls", () => {
   assert.match(appSource, /className="header-project-button"[\s\S]*?aria-haspopup="menu"/);
   assert.match(appSource, /className="header-project-menu" role="menu" aria-label=\{text\("项目", "Projects"\)\}/);
-  assert.match(appSource, /<ProjectAutomationMenu/);
   assert.match(appSource, /className="icon-button header-create-button"/);
   assert.match(styles, /\.header-project-menu \{[\s\S]*?-webkit-app-region: no-drag/);
 });
@@ -106,20 +76,11 @@ test("the project header keeps detail navigation separate from the project switc
   assert.doesNotMatch(appSource, /detailTask\?\.identifier \?\? "议题"/);
 });
 
-test("the collapsed Codex sidebar can be expanded immediately left of the project switcher", () => {
-  assert.match(
-    appSource,
-    /hostContext\?\.sidebarCollapsed[\s\S]*?className="detail-back-button codex-sidebar-expand-button"[\s\S]*?className="header-project-switcher"/,
-  );
-  assert.match(styles, /\.codex-sidebar-expand-button \{[\s\S]*?width: 28px;[\s\S]*?height: 28px;/);
-});
-
 test("the app omits the old navigation and keeps the embedded draggable header region", () => {
   assert.doesNotMatch(appSource, /<aside className="app-nav"/);
   assert.match(appSource, /<header className="workspace-header">/);
   assert.match(appSource, /ref=\{dragRegionRef\} className="workspace-drag-region"/);
   assert.match(styles, /\.workspace-drag-region \{[\s\S]*?flex: 1;[\s\S]*?align-self: stretch/);
-  assert.match(styles, /\.app-shell\.embedded \.workspace-drag-region \{[\s\S]*?-webkit-app-region: drag/);
 });
 
 test("realtime updates remain active on the project home and reconcile after reconnecting", () => {

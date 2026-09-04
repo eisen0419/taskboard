@@ -209,10 +209,6 @@ export function ProjectReadmeView({
               segments={segments}
               mentionTasks={tasks}
               referenceTasks={referenceTasks}
-              completionContext={{
-                projectId: project.id,
-                surface: "issue-description",
-              }}
               placeholder={text("添加说明...", "Add notes...")}
               ariaLabel={text("项目文档", "Project Docs")}
               disabled={saving}

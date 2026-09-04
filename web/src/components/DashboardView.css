@@ -96,72 +96,6 @@
   white-space: nowrap;
 }
 
-.dashboard-view .dashboard-codex-summary {
-  display: flex;
-  align-items: flex-end;
-  align-self: start;
-  grid-column: span 2;
-  width: auto;
-  max-width: none;
-  min-width: 0;
-  min-height: 132px;
-  gap: 10px;
-  margin: 28px 0 0;
-  padding: 20px 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.dashboard-view .dashboard-codex-mark {
-  display: block;
-  width: 26px;
-  height: 26px;
-  flex: 0 0 auto;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  object-fit: contain;
-}
-
-.dashboard-view .dashboard-summary-bubble {
-  display: flex;
-  align-items: center;
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 18px 20px;
-  border: 0;
-  border-radius: 24px 24px 0 24px;
-  background: linear-gradient(90deg, rgba(90, 163, 246, .1), rgba(98, 90, 246, .1));
-}
-
-.dashboard-view .dashboard-summary-bubble p {
-  margin: 0;
-  color: var(--dashboard-summary-text);
-  font-size: 16px;
-  font-weight: 520;
-  letter-spacing: normal;
-  line-height: 1.7;
-}
-
-.dashboard-view .dashboard-summary-bubble p.is-typing::after {
-  display: inline-block;
-  width: 1px;
-  height: 1.05em;
-  margin-left: 3px;
-  border-radius: 1px;
-  background: currentColor;
-  content: "";
-  vertical-align: -.14em;
-  animation: dashboard-summary-caret .72s steps(1, end) infinite;
-}
-
-@keyframes dashboard-summary-caret {
-  0%, 48% { opacity: 1; }
-  49%, 100% { opacity: .16; }
-}
-
 .dashboard-view .dashboard-metrics,
 .dashboard-view .dashboard-progress-panel,
 .dashboard-view .dashboard-grid {
@@ -1034,10 +968,6 @@
     grid-column: span 1;
   }
 
-  .dashboard-view .dashboard-codex-summary {
-    grid-column: span 1;
-  }
-
   .dashboard-view .dashboard-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     height: auto;
@@ -1074,7 +1004,6 @@
   }
 
   .dashboard-view .dashboard-heading,
-  .dashboard-view .dashboard-codex-summary,
   .dashboard-view .dashboard-contribution-panel,
   .dashboard-view .dashboard-label-panel {
     grid-column: auto;
@@ -1082,16 +1011,6 @@
 
   .dashboard-view .dashboard-heading {
     min-height: 150px;
-  }
-
-  .dashboard-view .dashboard-codex-summary {
-    min-height: 0;
-    margin-top: 0;
-    padding: 0 0 20px;
-  }
-
-  .dashboard-view .dashboard-summary-bubble p {
-    font-size: 15px;
   }
 
   .dashboard-view .dashboard-primary-panel,

@@ -130,8 +130,6 @@ test("common issue mutations enter a Linear-style undo queue", () => {
 });
 
 test("issues expose processing conversations without manual binding", () => {
-  assert.match(detailSource, /在新对话打开/);
-  assert.match(detailSource, /onOpenInThread\(currentTask\)/);
   assert.doesNotMatch(appSource, /detail-thread-button/);
   assert.doesNotMatch(detailSource, /输入对话 ID|解除 Codex 对话绑定|>绑定</);
   assert.doesNotMatch(editorSource, /对话 ID|linkedThreadId/);
@@ -150,7 +148,6 @@ test("issues expose processing conversations without manual binding", () => {
   assert.match(detailSource, /developmentContext/);
   assert.doesNotMatch(detailSource, /placeholder="绑定分支/);
   assert.doesNotMatch(contextMenuSource, /打开关联 Codex 对话/);
-  assert.match(contextMenuSource, /onOpenInThread/);
 });
 
 test("comments upload and render their own attachments in the content flow", () => {
