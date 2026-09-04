@@ -1,5 +1,7 @@
 # D1 · 删除 Codex 专属子系统（实现任务）
 
+> 🔴 **ESCALATION-67 D30 应答（attempt 1 BLOCKED 闭环）**：取 O1。answer=`/Users/happy/projects/taskboard/.teams/d1/answers/task-1.ac2e3e32-add4-4050-bdad-899b4b653d2a.md`。本单「不许退化」首条已按该裁决改写（e1b8be5）。未提交改动保留，不要回滚。
+
 > 🔴 **先读议题 <https://github.com/eisen0419/taskboard/issues/1>（`gh issue view 1 --comments`）——判据真源是它的「验收（可数）」6 条与「Out of scope」5 条。**
 
 席位：`codex-sol`。分支：`spec/1`，**baseSha = `8eff36f`**（写单时 HEAD，行号与基线取自它；分支点是本任务书的 docs commit，计数与 diff 用 `base=$(git merge-base origin/main HEAD)`）。允许 pathspec：仓内除 `docs/briefs/**` `docs/agents/**` `AGENTS.md` `CLAUDE.md` `LICENSE` 之外的全部（删除型议题，见「提交纪律」）。
