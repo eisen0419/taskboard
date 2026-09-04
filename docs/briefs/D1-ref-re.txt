@@ -1,0 +1,1 @@
+ai-chat|ai-turn|jira|cloud-config|cloud-proxy|codex-executable|codex-environment|codex-app-server|codex-injector|embeddedHost|revisionPolling|taskboard-automation|taskboard-supervisor|project-summary|ProjectAutomationMenu|JiraConnectionDialog|AiChat
