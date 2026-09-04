@@ -27,3 +27,4 @@
 13. **任务书必含提交纪律节**（同 ziping 差异 13）。#1 是删除型议题，任务书明文允许 `git add -A -- . ':(exclude)…'`，这是该议题的例外不是新默认。
 14. **worker 指令面**：本仓 `AGENTS.md` 与 `CLAUDE.md` 已改成指针（指向任务书），上游的 Taskboard Delivery Workflow（认领 / E3 / taskctl 流转）不再适用；worker 若按它行事按偏离处理。
 15. **库副本**：`.scratch/fixtures/taskboard-12.sqlite`（12 条议题）给 #1 验收④用；#2 合入后库删了重灌，由你按 ziping SESSION-STATE 里的灌入清单重建（或让 Fable 重灌）。
+16. **lanes 前置（d1 实证，2026-09-04）**：`tools/lanes` 要求目标仓已在 Orca 注册（`orca repo add --path /Users/happy/projects/taskboard`，一次性）且 `core.hooksPath=tools/githooks`；本仓无 `tools/`，做法 = 本地拷 orca-lab 的 `tools/githooks/commit-msg`（剥 co-author trailer）到本仓 `tools/githooks/`，并把 `/tools/githooks/` 写进 `.git/info/exclude`，不入 git。新机器或重克隆要重做这两步。
