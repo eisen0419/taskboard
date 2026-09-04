@@ -149,10 +149,10 @@ export function IssueListView({
                             <select
                               aria-label={text(`${displayIdentifier} 负责人`, `${displayIdentifier} assignee`)}
                               value={assigneeTarget}
-                              onChange={(event) => void onUpdate(task, { assigneeTarget: event.target.value as "current-user" | "codex-agent" }).catch(() => {})}
+                              onChange={(event) => void onUpdate(task, { assigneeTarget: event.target.value as "current-user" | "agent" }).catch(() => {})}
                             >
                               <option value="current-user">{currentUser.name}</option>
-                              <option value="codex-agent">Codex Agent</option>
+                              <option value="agent">Agent</option>
                             </select>
                           </label>
                         </span>

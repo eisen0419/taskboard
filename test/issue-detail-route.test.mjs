@@ -11,28 +11,28 @@ const appSource = await readFile(new URL("../web/src/App.tsx", import.meta.url),
 
 test("issue detail URLs preserve project context and unrelated query parameters", () => {
   const url = buildIssueUrl(
-    "http://127.0.0.1:47823/?host=codex&project=other&status=todo",
+    "http://127.0.0.1:47823/?host=taskboard&project=other&status=todo",
     "local",
     "LOCAL-72",
   );
 
   assert.equal(url.searchParams.get("project"), "local");
   assert.equal(url.searchParams.get("issue"), "LOCAL-72");
-  assert.equal(url.searchParams.get("host"), "codex");
+  assert.equal(url.searchParams.get("host"), "taskboard");
   assert.equal(url.searchParams.get("status"), "todo");
   assert.equal(readIssueIdentifier(url.search), "LOCAL-72");
 });
 
 test("closing issue detail removes only the issue route", () => {
   const url = buildIssueUrl(
-    "http://127.0.0.1:47823/?host=codex&project=local&issue=LOCAL-72&label=缺陷",
+    "http://127.0.0.1:47823/?host=taskboard&project=local&issue=LOCAL-72&label=缺陷",
     "local",
     null,
   );
 
   assert.equal(url.searchParams.has("issue"), false);
   assert.equal(url.searchParams.get("project"), "local");
-  assert.equal(url.searchParams.get("host"), "codex");
+  assert.equal(url.searchParams.get("host"), "taskboard");
   assert.deepEqual(url.searchParams.getAll("label"), ["缺陷"]);
 });
 

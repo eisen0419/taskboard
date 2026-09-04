@@ -436,7 +436,7 @@ kbd {
   z-index: 1;
   top: 0;
   right: 0;
-  left: var(--codex-titlebar-left-inset, 0px);
+  left: var(--titlebar-left-inset, 0px);
   height: 32px;
   pointer-events: none;
 }
@@ -449,7 +449,7 @@ kbd {
   min-width: 0;
   gap: 12px;
   padding: 0 16px;
-  padding-left: calc(16px + var(--codex-titlebar-left-inset, 0px));
+  padding-left: calc(16px + var(--titlebar-left-inset, 0px));
   border-bottom: var(--border-hairline) solid var(--border);
   background: transparent;
 }
@@ -890,7 +890,7 @@ kbd {
   line-height: 1;
 }
 
-.codex-context {
+.thread-context {
   max-width: 190px;
   margin-left: 3px;
   padding: 1px 5px;
@@ -2225,7 +2225,7 @@ kbd {
 .card-topline,
 .card-properties,
 .property-row,
-.codex-link-row,
+.thread-link-row,
 .dialog-context {
   display: flex;
   align-items: center;
@@ -2760,22 +2760,22 @@ kbd {
   stroke-width: 1.4;
 }
 
-.codex-sidebar-expand-button {
+.sidebar-expand-button {
   width: 28px;
   height: 28px;
   margin-left: 0;
 }
 
-.workspace-kicker > .codex-sidebar-expand-button:first-child {
+.workspace-kicker > .sidebar-expand-button:first-child {
   margin-left: -8px;
 }
 
-.codex-sidebar-expand-button svg {
+.sidebar-expand-button svg {
   width: 20px;
   height: 20px;
 }
 
-.codex-sidebar-expand-button + .project-home-button {
+.sidebar-expand-button + .project-home-button {
   margin-left: 0;
 }
 
@@ -5669,7 +5669,7 @@ kbd {
 .composer-title textarea::placeholder,
 .composer-description textarea::placeholder,
 .property-control input::placeholder,
-.codex-link-row input::placeholder {
+.thread-link-row input::placeholder {
   color: var(--text-tertiary);
 }
 
@@ -6102,7 +6102,7 @@ kbd {
   opacity: 0.55;
 }
 
-.codex-link-row {
+.thread-link-row {
   min-width: 0;
   height: 34px;
   gap: 7px;
@@ -6113,7 +6113,7 @@ kbd {
   color: var(--text-tertiary);
 }
 
-.codex-link-row > svg {
+.thread-link-row > svg {
   flex: 0 0 auto;
   width: 14px;
   height: 14px;
@@ -6123,12 +6123,12 @@ kbd {
   stroke-width: 1.2;
 }
 
-.codex-link-row label {
+.thread-link-row label {
   flex: 1;
   min-width: 0;
 }
 
-.codex-link-row input {
+.thread-link-row input {
   width: 100%;
   height: 31px;
   padding: 0;
@@ -6139,7 +6139,7 @@ kbd {
   font-size: 11px;
 }
 
-.codex-link-row button {
+.thread-link-row button {
   flex: 0 0 auto;
   height: 24px;
   padding: 0 6px;
@@ -6150,7 +6150,7 @@ kbd {
   font-size: 10px;
 }
 
-.codex-link-row button:hover {
+.thread-link-row button:hover {
   background: var(--accent-soft);
 }
 
@@ -6820,11 +6820,11 @@ kbd {
 @media (max-width: 620px) {
   .workspace-header {
     padding: 0 10px;
-    padding-left: calc(10px + var(--codex-titlebar-left-inset, 0px));
+    padding-left: calc(10px + var(--titlebar-left-inset, 0px));
   }
 
   .project-avatar,
-  .codex-context,
+  .thread-context,
   .compact-select,
   .header-actions .toolbar-connection {
     display: none;
@@ -6972,7 +6972,7 @@ kbd {
   height: 44px;
   gap: 10px;
   padding-right: 16px;
-  padding-left: calc(16px + var(--codex-titlebar-left-inset, 0px));
+  padding-left: calc(16px + var(--titlebar-left-inset, 0px));
   background: transparent;
 }
 
@@ -8383,7 +8383,7 @@ kbd {
 
   .workspace-header {
     padding-right: 10px;
-    padding-left: calc(10px + var(--codex-titlebar-left-inset, 0px));
+    padding-left: calc(10px + var(--titlebar-left-inset, 0px));
   }
 
   .project-automation-trigger {

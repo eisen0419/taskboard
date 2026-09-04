@@ -33,7 +33,7 @@ import type {
   ActorIdentity,
   Attachment,
   Comment,
-  CodexThreadBinding,
+  AgentThreadBinding,
   DevelopmentContext,
   DevelopmentScan,
   IssueRelationOrigin,
@@ -47,7 +47,7 @@ import type {
   TaskStatus,
 } from "../types";
 import {
-  CODEX_AGENT_ACTOR,
+  AGENT_ACTOR,
   actorKey,
   assigneeTargetForActor,
 } from "../actors";
@@ -59,7 +59,6 @@ import {
   AttachmentIcon,
   BlockingRelationIcon,
   BranchIcon,
-  CodexResumeIcon,
   ConversationIcon,
   DeleteIcon,
   DueDateIcon,
@@ -124,7 +123,7 @@ interface TaskDetailProps {
     relatedTaskId: string,
     origin?: IssueRelationOrigin,
   ) => Promise<RelationMutationResult>;
-  onOpenThread: (binding: CodexThreadBinding) => void;
+  onOpenThread: (binding: AgentThreadBinding) => void;
   onOpenLegacyLocalThread: (threadId: string) => void;
   onCopy: (text: string, announcement: string) => void;
   onError: (message: TaskDetailError | null) => void;
@@ -317,13 +316,9 @@ function ActivityChangeIcon({ field, before, after }: {
 }
 
 function ConversationLink({
-  threadId,
   onOpen,
-  onCopy,
 }: {
-  threadId: string;
   onOpen: () => void;
-  onCopy: (text: string, announcement: string) => void;
 }) {
   const { text } = useTaskboardI18n();
   return (
@@ -331,23 +326,11 @@ function ConversationLink({
       <button
         className="issue-conversation-link"
         type="button"
-        title={text("查看对话", "View conversation")}
+        title={text("复制会话 ID", "Copy thread ID")}
         onClick={onOpen}
       >
         <ConversationIcon color="currentColor" size={16} />
-        <strong>{text("查看对话", "View conversation")}</strong>
-      </button>
-      <button
-        className="issue-conversation-copy"
-        type="button"
-        title={text("复制终端命令", "Copy terminal command")}
-        onClick={() => onCopy(
-          `codex resume ${threadId}`,
-          text("Codex 恢复命令已复制。", "Codex resume command copied."),
-        )}
-      >
-        <CodexResumeIcon />
-        <span>{text("复制终端命令", "Copy terminal command")}</span>
+        <strong>{text("复制会话 ID", "Copy thread ID")}</strong>
       </button>
     </div>
   );
@@ -950,7 +933,7 @@ export function TaskDetail({
     && currentTask.assignee.id === currentUser.id
     ? currentUser
     : currentTask.assignee;
-  const assigneeOptions = [displayAssignee, currentUser, CODEX_AGENT_ACTOR]
+  const assigneeOptions = [displayAssignee, currentUser, AGENT_ACTOR]
     .filter((actor, index, actors) => (
       actors.findIndex((candidate) => actorKey(candidate) === actorKey(actor)) === index
     ));
@@ -1162,11 +1145,9 @@ export function TaskDetail({
                     aria-label={text("处理此议题的对话", "Conversations for this issue")}
                   >
                     <ConversationLink
-                      threadId={currentTask.threadBinding?.threadId ?? currentTask.legacyLocalThreadId!}
                       onOpen={() => currentTask.threadBinding
                         ? onOpenThread(currentTask.threadBinding)
                         : onOpenLegacyLocalThread(currentTask.legacyLocalThreadId!)}
-                      onCopy={onCopy}
                     />
                   </div>
                 )}
@@ -1446,11 +1427,9 @@ export function TaskDetail({
                       {(comment.threadBinding || comment.legacyLocalThreadId) && (
                         <div className="comment-conversation-link">
                           <ConversationLink
-                            threadId={comment.threadBinding?.threadId ?? comment.legacyLocalThreadId!}
                             onOpen={() => comment.threadBinding
                               ? onOpenThread(comment.threadBinding)
                               : onOpenLegacyLocalThread(comment.legacyLocalThreadId!)}
-                            onCopy={onCopy}
                           />
                         </div>
                       )}

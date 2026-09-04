@@ -141,7 +141,7 @@ export function TaskConversationMenu({
                 <small>{conversationSource(conversation, text)}</small>
               </span>
               <span className="task-conversation-menu-status">
-                Codex
+                {text("会话", "Thread")}
               </span>
             </button>
           ))}
