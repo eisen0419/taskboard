@@ -28,7 +28,7 @@ async function run(argv, fetchImplementation, overrides = {}) {
     fetch: fetchImplementation,
     stdout: stdout.stream,
     stderr: stderr.stream,
-    env: { CODEX_THREAD_ID: "thread-current" },
+    env: { TASKBOARD_THREAD_ID: "thread-current" },
     ...overrides,
   });
   return {
@@ -64,7 +64,7 @@ test("project list uses the default local service and adds schemaVersion", async
   assert.equal(calls[0].init.headers["x-taskboard-client"], "taskctl");
 });
 
-test("CODEX_TASKBOARD_URL overrides the service origin", async () => {
+test("TASKBOARD_URL overrides the service origin", async () => {
   let requestedUrl;
   const result = await run(
     ["project", "list", "--json"],
@@ -72,7 +72,7 @@ test("CODEX_TASKBOARD_URL overrides the service origin", async () => {
       requestedUrl = url;
       return response({ projects: [] });
     },
-    { env: { CODEX_TASKBOARD_URL: "https://tasks.example.test/" } },
+    { env: { TASKBOARD_URL: "https://tasks.example.test/" } },
   );
 
   assert.equal(result.exitCode, 0);
@@ -104,7 +104,7 @@ test("WSL taskctl discovers the Windows launcher runtime descriptor from Windows
   let requestedUrl;
   const runtimeFile = path.join(
     "/windows/users/R&D Müller/AppData/Roaming",
-    "Codex Taskboard",
+    "Taskboard",
     "launcher-runtime.json",
   );
   const readPaths = [];
@@ -150,7 +150,7 @@ test("WSL taskctl discovers the Windows launcher runtime descriptor from Windows
   assert.equal(readPaths.at(-1), runtimeFile);
 });
 
-test("CODEX_TASKBOARD_WSL_RUNTIME_FILE overrides WSL automatic discovery", async () => {
+test("TASKBOARD_WSL_RUNTIME_FILE overrides WSL automatic discovery", async () => {
   const runtimeFile = "/runtime/taskboard.json";
   let curlArgs;
   const result = await run(
@@ -159,7 +159,7 @@ test("CODEX_TASKBOARD_WSL_RUNTIME_FILE overrides WSL automatic discovery", async
     {
       env: {
         WSL_DISTRO_NAME: "Ubuntu",
-        CODEX_TASKBOARD_WSL_RUNTIME_FILE: runtimeFile,
+        TASKBOARD_WSL_RUNTIME_FILE: runtimeFile,
       },
       execFile: async () => {
         assert.fail("automatic discovery must not run for an explicit WSL runtime file");
@@ -177,7 +177,7 @@ test("CODEX_TASKBOARD_WSL_RUNTIME_FILE overrides WSL automatic discovery", async
         child.stderr = new PassThrough();
         queueMicrotask(() => {
           child.stdout.end(JSON.stringify({ projects: [] }));
-          child.stderr.end("__CODEX_TASKBOARD_CURL_RESPONSE__200\tapplication/json\t15");
+          child.stderr.end("__TASKBOARD_CURL_RESPONSE__200\tapplication/json\t15");
           child.emit("close", 0);
         });
         return child;
@@ -404,9 +404,9 @@ test("issue move separates controller attribution from the task thread binding",
   const result = await run([
     "issue", "move", "TASK-1", "--status", "blocked", "--if-version", "3",
     "--binding-thread-id", "remote-thread",
-    "--binding-codex-project-id", "remote-project",
-    "--binding-codex-project-kind", "remote",
-    "--binding-codex-host-id", "remote-host",
+    "--binding-agent-project-id", "remote-project",
+    "--binding-agent-project-kind", "remote",
+    "--binding-agent-host-id", "remote-host",
     "--binding-workspace-path", windowsWorkspacePath,
   ], async (_url, init) => {
     requestBody = JSON.parse(init.body);
@@ -418,9 +418,9 @@ test("issue move separates controller attribution from the task thread binding",
     threadId: "thread-current",
     threadBinding: {
       threadId: "remote-thread",
-      codexProjectId: "remote-project",
-      codexProjectKind: "remote",
-      codexHostId: "remote-host",
+      agentProjectId: "remote-project",
+      agentProjectKind: "remote",
+      agentHostId: "remote-host",
       workspacePath: windowsWorkspacePath,
     },
     version: 3,
@@ -445,7 +445,7 @@ test("issue move can clear an unconfirmed task binding", async () => {
   });
 });
 
-test("an explicit --thread-id overrides CODEX_THREAD_ID on issue writes", async () => {
+test("an explicit --thread-id overrides TASKBOARD_THREAD_ID on issue writes", async () => {
   let requestBody;
   const result = await run(
     ["issue", "update", "TASK-1", "--title", "Attributed", "--thread-id", "thread-9", "--if-version", "2"],
@@ -653,14 +653,14 @@ test("context current falls back to the local project", async () => {
   assert.equal(result.stdout.project.id, "local");
 });
 
-test("issue and comment writes require Codex conversation attribution", async () => {
+test("issue and comment writes require conversation attribution", async () => {
   const issueResult = await run(
     ["issue", "update", "TASK-1", "--title", "No attribution", "--if-version", "1"],
     async () => assert.fail("fetch should not be called"),
     { env: {} },
   );
   assert.equal(issueResult.exitCode, 2);
-  assert.match(issueResult.stderr.error.message, /--thread-id or CODEX_THREAD_ID/);
+  assert.match(issueResult.stderr.error.message, /--thread-id or TASKBOARD_THREAD_ID/);
 
   const commentResult = await run(
     ["comment", "add", "TASK-1", "--body", "No attribution"],
@@ -668,7 +668,7 @@ test("issue and comment writes require Codex conversation attribution", async ()
     { env: {} },
   );
   assert.equal(commentResult.exitCode, 2);
-  assert.match(commentResult.stderr.error.message, /--thread-id or CODEX_THREAD_ID/);
+  assert.match(commentResult.stderr.error.message, /--thread-id or TASKBOARD_THREAD_ID/);
 });
 
 test("manual linked-thread options and commands are no longer accepted", async () => {

@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 
 async function startServer() {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "codex-taskboard-readme-test-"));
+  const directory = await mkdtemp(path.join(os.tmpdir(), "taskboard-readme-test-"));
   const app = createTaskboardServer({ dataDirectory: directory });
   const address = await app.listen({ port: 0 });
   runningApps.push({ app, directory });
@@ -64,8 +64,8 @@ async function runCli(argv, baseUrl, overrides = {}) {
     stdout: stdout.stream,
     stderr: stderr.stream,
     env: {
-      CODEX_TASKBOARD_URL: baseUrl,
-      CODEX_THREAD_ID: "test-thread",
+      TASKBOARD_URL: baseUrl,
+      TASKBOARD_THREAD_ID: "test-thread",
     },
     ...overrides,
   });

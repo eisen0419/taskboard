@@ -12,7 +12,7 @@ export const TASK_PRIORITIES = ["none", "urgent", "high", "medium", "low"] as co
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 export type ActorType = "user" | "agent";
-export type AssigneeTarget = "current-user" | "codex-agent";
+export type AssigneeTarget = "current-user" | "agent";
 export type IssueRelationType = "parent" | "blocks" | "blocked_by" | "related";
 export type IssueRelationOrigin = "manual" | "mention";
 
@@ -37,14 +37,14 @@ export interface DevelopmentScan {
   contexts: DevelopmentContext[];
 }
 
-export interface CodexProjectIdentity {
-  codexProjectId: string;
-  codexProjectKind: "local" | "remote";
-  codexHostId: string;
+export interface AgentProjectIdentity {
+  agentProjectId: string;
+  agentProjectKind: "local" | "remote";
+  agentHostId: string;
   workspacePath: string;
 }
 
-export interface CodexThreadBinding extends CodexProjectIdentity {
+export interface AgentThreadBinding extends AgentProjectIdentity {
   threadId: string;
 }
 
@@ -105,7 +105,7 @@ interface TaskConversationRefBase {
 }
 
 export type TaskConversationRef = TaskConversationRefBase & (
-  | (CodexThreadBinding & { legacyLocal?: false })
+  | (AgentThreadBinding & { legacyLocal?: false })
   | { threadId: string; legacyLocal: true }
 );
 
@@ -120,7 +120,7 @@ export interface Task {
   labels: string[];
   sortOrder: number;
   threadId: string | null;
-  threadBinding: CodexThreadBinding | null;
+  threadBinding: AgentThreadBinding | null;
   legacyLocalThreadId: string | null;
   conversationRefs: TaskConversationRef[];
   participants: ActorIdentity[];
@@ -156,7 +156,7 @@ export interface Comment {
   authorName: string;
   authorAvatarUrl: string | null;
   threadId: string | null;
-  threadBinding: CodexThreadBinding | null;
+  threadBinding: AgentThreadBinding | null;
   legacyLocalThreadId: string | null;
   attachments: Attachment[];
   version: number;

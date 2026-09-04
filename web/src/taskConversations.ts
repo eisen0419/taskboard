@@ -1,4 +1,4 @@
-import type { CodexThreadBinding, Task } from "./types";
+import type { AgentThreadBinding, Task } from "./types";
 
 export interface TaskConversationItem {
   key: string;
@@ -7,7 +7,7 @@ export interface TaskConversationItem {
   title: string;
   source: "task" | "comment";
   nativeThreadId: string;
-  threadBinding: CodexThreadBinding | null;
+  threadBinding: AgentThreadBinding | null;
   legacyLocalThreadId: string | null;
   updatedAt: string;
 }
@@ -36,7 +36,7 @@ export function taskConversations(task: Task) {
   for (const ref of task.conversationRefs ?? []) {
     const normalizedId = normalizeThreadId(ref.threadId);
     if (!normalizedId) continue;
-    const key = `codex:${normalizedId}`;
+    const key = `agent:${normalizedId}`;
     const current = items.get(key);
     const next: TaskConversationItem = {
       key,
@@ -47,9 +47,9 @@ export function taskConversations(task: Task) {
       nativeThreadId: ref.threadId,
       threadBinding: ref.legacyLocal ? null : {
         threadId: ref.threadId,
-        codexProjectId: ref.codexProjectId,
-        codexProjectKind: ref.codexProjectKind,
-        codexHostId: ref.codexHostId,
+        agentProjectId: ref.agentProjectId,
+        agentProjectKind: ref.agentProjectKind,
+        agentHostId: ref.agentHostId,
         workspacePath: ref.workspacePath,
       },
       legacyLocalThreadId: ref.legacyLocal ? ref.threadId : null,
@@ -67,7 +67,7 @@ export function taskCardPresentation(task: Task, unread: boolean): TaskCardPrese
   return {
     conversations: taskConversations(task),
     unread,
-    // Keep the view presentation shape stable after removing Codex run tracking.
+    // Keep the view presentation shape stable without run tracking.
     processing: {
       running: false,
       completed: null,

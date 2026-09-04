@@ -20,7 +20,7 @@ afterEach(async () => {
 });
 
 async function startServer(configure, listenOptions = {}) {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "codex-taskboard-test-"));
+  const directory = await mkdtemp(path.join(os.tmpdir(), "taskboard-test-"));
   const options = configure ? await configure(directory) : {};
   const app = createTaskboardServer({ dataDirectory: directory, ...options });
   const address = await app.listen({ port: 0, ...listenOptions });
@@ -109,10 +109,10 @@ test("launcher mode proves service identity and hides every route behind its ins
   assert.equal(unauthenticatedHealth.response.status, 401);
 
   const health = await request(baseUrl, "/health", {
-    headers: { "x-codex-taskboard-challenge": challenge },
+    headers: { "x-taskboard-challenge": challenge },
   });
   assert.equal(health.response.status, 200);
-  assert.equal(health.body.product, "codex-taskboard");
+  assert.equal(health.body.product, "taskboard");
   assert.equal(health.body.version, version);
   assert.equal(
     health.body.proof,
@@ -215,12 +215,12 @@ test("existing task and comment thread attribution remains content-specific", as
     { threadId: "legacy-comment-thread", legacyLocal: true },
   ]);
   assert.equal(result.body.task.creatorType, "agent");
-  assert.equal(result.body.task.creatorId, "codex-agent");
-  assert.equal(result.body.task.creatorName, "Codex Agent");
+  assert.equal(result.body.task.creatorId, "agent");
+  assert.equal(result.body.task.creatorName, "Agent");
   assert.deepEqual(result.body.task.assignee, {
     type: "agent",
-    id: "codex-agent",
-    name: "Codex Agent",
+    id: "agent",
+    name: "Agent",
     avatarUrl: null,
   });
   assert.equal(Object.hasOwn(result.body.task, "linkedThreadId"), false);
@@ -240,8 +240,8 @@ test("existing task and comment thread attribution remains content-specific", as
   assert.equal(comments.body.comments[0].threadBinding, null);
   assert.equal(comments.body.comments[0].legacyLocalThreadId, "legacy-comment-thread");
   assert.equal(comments.body.comments[0].authorType, "agent");
-  assert.equal(comments.body.comments[0].authorId, "codex-agent");
-  assert.equal(comments.body.comments[0].authorName, "Codex Agent");
+  assert.equal(comments.body.comments[0].authorId, "agent");
+  assert.equal(comments.body.comments[0].authorName, "Agent");
   assert.deepEqual(comments.body.comments[0].attachments, []);
   const attachments = await request(baseUrl, "/api/tasks/legacy-task/attachments");
   assert.equal(attachments.body.attachments[0].commentId, null);
@@ -346,32 +346,14 @@ test("task thread migration excludes comment-only aggregate entries", async () =
   assert.equal(comments.body.comments[0].threadId, "thread-comment-only");
 });
 
-test("development context scan resolves the current Codex conversation workspace", async () => {
-  let expectedWorkspace;
-  const baseUrl = await startServer(async (directory) => {
-    expectedWorkspace = directory;
-    const processesPath = path.join(directory, "chat_processes.json");
-    await writeFile(processesPath, JSON.stringify({
-      recent: [{
-        conversationId: "019f7f96-287b-7da0-bc7f-ffe03af85cc8",
-        cwd: directory,
-        updatedAtMs: 20,
-      }],
-    }));
-    return {
-      codexStatePath: path.join(directory, "missing-state.json"),
-      codexProcessesPath: processesPath,
-    };
-  });
-  const result = await request(
-    baseUrl,
-    "/api/projects/local/development-contexts?codexThreadId=019f7f96-287b-7da0-bc7f-ffe03af85cc8",
-  );
+test("development context scan uses only the requested workspace", async () => {
+  const baseUrl = await startServer();
+  const result = await request(baseUrl, "/api/projects/local/development-contexts");
   assert.equal(result.response.status, 200);
-  assert.equal(result.body.workspacePath, expectedWorkspace);
+  assert.equal(result.body.workspacePath, null);
   assert.deepEqual(result.body.contexts, []);
 
-  const deviceWorkspace = path.join(expectedWorkspace, "another-device-workspace");
+  const deviceWorkspace = path.join(os.tmpdir(), "taskboard-device-workspace");
   const deviceResult = await request(
     baseUrl,
     `/api/projects/local/development-contexts?workspacePath=${encodeURIComponent(deviceWorkspace)}`,
@@ -383,10 +365,10 @@ test("development context scan resolves the current Codex conversation workspace
 test("accepts private LAN requests and rejects public Host and Origin headers", async () => {
   const baseUrl = await startServer(undefined, { host: "0.0.0.0" });
 
-  const codexOriginResult = await request(baseUrl, "/health", {
+  const taskboardOriginResult = await request(baseUrl, "/health", {
     headers: { origin: "app://-" },
   });
-  assert.equal(codexOriginResult.response.status, 200);
+  assert.equal(taskboardOriginResult.response.status, 200);
 
   const lanHostResult = await requestWithHost(baseUrl, "192.168.1.24:47823");
   assert.equal(lanHostResult.status, 200);
@@ -416,7 +398,7 @@ test("trusted HTTPS origins allow their exact public Host without trusting forwa
     await writeFile(path.join(directory, "index.html"), "<!doctype html><title>Taskboard</title>");
     return {
       staticDirectory: directory,
-      processEnv: { ...process.env, CODEX_TASKBOARD_TRUSTED_ORIGINS: trustedOrigin },
+      processEnv: { ...process.env, TASKBOARD_TRUSTED_ORIGINS: trustedOrigin },
     };
   });
   const host = "127.0.0.1";
@@ -476,7 +458,7 @@ test("trusted origin configuration rejects non-origin URLs", () => {
   const valid = resolveServerOptions({
     processEnv: {
       ...process.env,
-      CODEX_TASKBOARD_TRUSTED_ORIGINS: "https://board.example.test, https://second.example.test/",
+      TASKBOARD_TRUSTED_ORIGINS: "https://board.example.test, https://second.example.test/",
     },
   });
   assert.deepEqual(valid.trustedOrigins, new Set([
@@ -499,9 +481,9 @@ test("trusted origin configuration rejects non-origin URLs", () => {
   ]) {
     assert.throws(
       () => resolveServerOptions({
-        processEnv: { ...process.env, CODEX_TASKBOARD_TRUSTED_ORIGINS: value },
+        processEnv: { ...process.env, TASKBOARD_TRUSTED_ORIGINS: value },
       }),
-      /CODEX_TASKBOARD_TRUSTED_ORIGINS/,
+      /TASKBOARD_TRUSTED_ORIGINS/,
     );
   }
 });
@@ -657,9 +639,9 @@ test("remote task bindings keep their own identity and can be cleared independen
   })), [{ threadId: "legacy-thread", legacyLocal: true }]);
   const binding = {
     threadId: "remote-thread-a",
-    codexProjectId: "remote-project-a",
-    codexProjectKind: "remote",
-    codexHostId: "ssh-a",
+    agentProjectId: "remote-project-a",
+    agentProjectKind: "remote",
+    agentHostId: "ssh-a",
     workspacePath: "/same/remote/path",
   };
   const created = (await request(baseUrl, "/api/tasks", {
@@ -667,7 +649,7 @@ test("remote task bindings keep their own identity and can be cleared independen
     body: { title: "Remote binding", threadId: binding.threadId, threadBinding: binding },
   })).body.task;
   assert.deepEqual(created.threadBinding, binding);
-  assert.deepEqual(created.conversationRefs.map((ref) => ref.codexHostId), ["ssh-a"]);
+  assert.deepEqual(created.conversationRefs.map((ref) => ref.agentHostId), ["ssh-a"]);
 
   const continued = (await request(baseUrl, `/api/tasks/${created.id}/move`, {
     method: "POST",
@@ -1151,7 +1133,7 @@ test("issue comments can be created, edited, listed, and deleted", async () => {
   assert.equal(taskAfterDelete.body.task.threadId, null);
 });
 
-test("taskctl issue creation and comments use the Codex Agent identity", async () => {
+test("taskctl issue creation and comments use the Agent identity", async () => {
   const baseUrl = await startServer();
   const agentHeaders = {
     "x-taskboard-client": "taskctl",
@@ -1162,36 +1144,36 @@ test("taskctl issue creation and comments use the Codex Agent identity", async (
   const createTaskResult = await request(baseUrl, "/api/tasks", {
     method: "POST",
     headers: agentHeaders,
-    body: { title: "Created by Codex", threadId: "thread-agent-create" },
+    body: { title: "Created by Agent", threadId: "thread-agent-create" },
   });
   assert.equal(createTaskResult.response.status, 201);
   const task = createTaskResult.body.task;
   assert.equal(task.creatorType, "agent");
-  assert.equal(task.creatorId, "codex-agent");
-  assert.equal(task.creatorName, "Codex Agent");
+  assert.equal(task.creatorId, "agent");
+  assert.equal(task.creatorName, "Agent");
   assert.equal(task.creatorAvatarUrl, null);
   assert.deepEqual(task.assignee, {
     type: "agent",
-    id: "codex-agent",
-    name: "Codex Agent",
+    id: "agent",
+    name: "Agent",
     avatarUrl: null,
   });
 
   const createCommentResult = await request(baseUrl, `/api/tasks/${task.id}/comments`, {
     method: "POST",
     headers: agentHeaders,
-    body: { body: "Implemented by Codex", threadId: "thread-agent-comment" },
+    body: { body: "Implemented by Agent", threadId: "thread-agent-comment" },
   });
   assert.equal(createCommentResult.response.status, 201);
   const comment = createCommentResult.body.comment;
   assert.equal(comment.authorType, "agent");
-  assert.equal(comment.authorId, "codex-agent");
-  assert.equal(comment.authorName, "Codex Agent");
+  assert.equal(comment.authorId, "agent");
+  assert.equal(comment.authorName, "Agent");
   assert.equal(comment.authorAvatarUrl, null);
   assert.equal(comment.threadId, "thread-agent-comment");
 });
 
-test("Codex-hosted user mutations persist the current account identity and avatar", async () => {
+test("Taskboard-hosted user mutations persist the current account identity and avatar", async () => {
   const baseUrl = await startServer();
   const userHeaders = {
     "x-taskboard-user-id": "test-user",
@@ -1201,7 +1183,7 @@ test("Codex-hosted user mutations persist the current account identity and avata
   const createTaskResult = await request(baseUrl, "/api/tasks", {
     method: "POST",
     headers: userHeaders,
-    body: { title: "Created in Codex UI" },
+    body: { title: "Created in Taskboard UI" },
   });
   assert.equal(createTaskResult.response.status, 201);
   const task = createTaskResult.body.task;
@@ -1216,19 +1198,19 @@ test("Codex-hosted user mutations persist the current account identity and avata
     avatarUrl: "https://example.com/test-user.png",
   });
 
-  const assignedToCodexResult = await request(baseUrl, `/api/tasks/${task.id}`, {
+  const assignedToAgentResult = await request(baseUrl, `/api/tasks/${task.id}`, {
     method: "PATCH",
     headers: userHeaders,
     body: {
       version: task.version,
-      assigneeTarget: "codex-agent",
+      assigneeTarget: "agent",
     },
   });
-  assert.equal(assignedToCodexResult.response.status, 200);
-  assert.deepEqual(assignedToCodexResult.body.task.assignee, {
+  assert.equal(assignedToAgentResult.response.status, 200);
+  assert.deepEqual(assignedToAgentResult.body.task.assignee, {
     type: "agent",
-    id: "codex-agent",
-    name: "Codex Agent",
+    id: "agent",
+    name: "Agent",
     avatarUrl: null,
   });
 
@@ -1236,7 +1218,7 @@ test("Codex-hosted user mutations persist the current account identity and avata
     method: "PATCH",
     headers: userHeaders,
     body: {
-      version: assignedToCodexResult.body.task.version,
+      version: assignedToAgentResult.body.task.version,
       assigneeTarget: "current-user",
     },
   });
@@ -1248,7 +1230,7 @@ test("Codex-hosted user mutations persist the current account identity and avata
     avatarUrl: "https://example.com/test-user.png",
   });
 
-  const updatedByCodexResult = await request(baseUrl, `/api/tasks/${task.id}`, {
+  const updatedByAgentResult = await request(baseUrl, `/api/tasks/${task.id}`, {
     method: "PATCH",
     headers: { "x-taskboard-client": "taskctl" },
     body: {
@@ -1256,14 +1238,14 @@ test("Codex-hosted user mutations persist the current account identity and avata
       title: "Updated through taskctl",
     },
   });
-  assert.equal(updatedByCodexResult.response.status, 200);
-  assert.deepEqual(updatedByCodexResult.body.task.assignee, assignedToUserResult.body.task.assignee);
+  assert.equal(updatedByAgentResult.response.status, 200);
+  assert.deepEqual(updatedByAgentResult.body.task.assignee, assignedToUserResult.body.task.assignee);
 
   const invalidAssigneeResult = await request(baseUrl, `/api/tasks/${task.id}`, {
     method: "PATCH",
     headers: userHeaders,
     body: {
-      version: updatedByCodexResult.body.task.version,
+      version: updatedByAgentResult.body.task.version,
       assigneeTarget: { type: "agent" },
     },
   });
@@ -1273,7 +1255,7 @@ test("Codex-hosted user mutations persist the current account identity and avata
   const createCommentResult = await request(baseUrl, `/api/tasks/${task.id}/comments`, {
     method: "POST",
     headers: userHeaders,
-    body: { body: "Commented in Codex UI" },
+    body: { body: "Commented in Taskboard UI" },
   });
   assert.equal(createCommentResult.response.status, 201);
   const comment = createCommentResult.body.comment;

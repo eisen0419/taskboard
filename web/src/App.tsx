@@ -103,7 +103,7 @@ import {
 import {
   TASK_STATUSES,
   type ActorIdentity,
-  type CodexThreadBinding,
+  type AgentThreadBinding,
   type DevelopmentScan,
   type IssueRelationOrigin,
   type IssueRelationType,
@@ -986,8 +986,6 @@ export function App() {
     setDevelopmentScanLoading(true);
     void listDevelopmentContexts(
       developmentProjectId,
-      developmentProjectId,
-      isAllProjects ? contextMenuTask?.threadId ?? undefined : detailTask?.threadId ?? undefined,
       controller.signal,
       workspacePath,
     )
@@ -1003,8 +1001,6 @@ export function App() {
     return () => controller.abort();
   }, [
     contextMenuTask?.projectId,
-    contextMenuTask?.threadId,
-    detailTask?.threadId,
     developmentEditorProjectId,
     isAllProjects,
     projects,
@@ -1686,19 +1682,12 @@ export function App() {
     }
   }
 
-  function openThread(binding: CodexThreadBinding) {
-    if (binding.codexProjectKind === "remote") {
-      setActionError(text(
-        "请在 Codex App 中打开该 SSH 远程对话。",
-        "Open this SSH remote conversation in the Codex app.",
-      ));
-      return;
-    }
-    window.location.assign(`codex://threads/${encodeURIComponent(binding.threadId.trim())}`);
+  function openThread(binding: AgentThreadBinding) {
+    void copyText(binding.threadId.trim(), text("会话 ID 已复制。", "Thread ID copied."));
   }
 
   function openLegacyLocalThread(threadId: string) {
-    window.location.assign(`codex://threads/${encodeURIComponent(threadId.trim())}`);
+    void copyText(threadId.trim(), text("会话 ID 已复制。", "Thread ID copied."));
   }
 
   function openTaskConversation(conversation: TaskConversationItem) {

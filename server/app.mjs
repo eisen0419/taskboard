@@ -3,7 +3,6 @@ import { execFile } from "node:child_process";
 import { chmod, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { isIP } from "node:net";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -33,11 +32,11 @@ const INLINE_ATTACHMENT_TYPES = new Set([
 const PROJECT_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const PROJECT_BOARD_DISPLAY_SETTINGS_KEY_PREFIX = "taskboard.project-board-display-settings.v3.";
 const TRUSTED_EMBED_ORIGINS = new Set(["app://-"]);
-const TRUSTED_ORIGINS_ENV = "CODEX_TASKBOARD_TRUSTED_ORIGINS";
-const CODEX_AGENT_ACTOR = {
+const TRUSTED_ORIGINS_ENV = "TASKBOARD_TRUSTED_ORIGINS";
+const AGENT_ACTOR = {
   type: "agent",
-  id: "codex-agent",
-  name: "Codex Agent",
+  id: "agent",
+  name: "Agent",
   avatarUrl: null,
 };
 const CONTENT_TYPES = new Map([
@@ -406,9 +405,9 @@ function parseThreadBinding(value) {
   assertPlainObject(value);
   assertAllowedKeys(value, new Set([
     "threadId",
-    "codexProjectId",
-    "codexProjectKind",
-    "codexHostId",
+    "agentProjectId",
+    "agentProjectKind",
+    "agentHostId",
     "workspacePath",
   ]));
   const threadId = stringField(value.threadId, "threadBinding.threadId", {
@@ -416,21 +415,21 @@ function parseThreadBinding(value) {
     maxLength: 256,
   });
   const identityFields = [
-    value.codexProjectId,
-    value.codexProjectKind,
-    value.codexHostId,
+    value.agentProjectId,
+    value.agentProjectKind,
+    value.agentHostId,
     value.workspacePath,
   ];
   if (identityFields.every((field) => field === undefined)) return { threadId };
   if (identityFields.some((field) => field === undefined)) {
     throw new ApiError(400, "INVALID_FIELD", "Thread identity must include project, kind, host, and workspace");
   }
-  const codexProjectId = stringField(value.codexProjectId, "threadBinding.codexProjectId", {
+  const agentProjectId = stringField(value.agentProjectId, "threadBinding.agentProjectId", {
     required: true,
     maxLength: 256,
   });
-  const codexProjectKind = value.codexProjectKind;
-  const codexHostId = stringField(value.codexHostId, "threadBinding.codexHostId", {
+  const agentProjectKind = value.agentProjectKind;
+  const agentHostId = stringField(value.agentHostId, "threadBinding.agentHostId", {
     required: true,
     maxLength: 256,
   });
@@ -438,17 +437,17 @@ function parseThreadBinding(value) {
     required: true,
     maxLength: 4096,
   });
-  if (codexProjectKind !== "local" && codexProjectKind !== "remote") {
-    throw new ApiError(400, "INVALID_FIELD", "threadBinding.codexProjectKind must be local or remote");
+  if (agentProjectKind !== "local" && agentProjectKind !== "remote") {
+    throw new ApiError(400, "INVALID_FIELD", "threadBinding.agentProjectKind must be local or remote");
   }
   if (
-    (codexProjectKind === "local" && codexHostId !== "local")
-    || (codexProjectKind === "remote" && codexHostId === "local")
+    (agentProjectKind === "local" && agentHostId !== "local")
+    || (agentProjectKind === "remote" && agentHostId === "local")
     || workspacePath.includes("\0")
   ) {
     throw new ApiError(400, "INVALID_FIELD", "Thread project identity is invalid");
   }
-  return { threadId, codexProjectId, codexProjectKind, codexHostId, workspacePath };
+  return { threadId, agentProjectId, agentProjectKind, agentHostId, workspacePath };
 }
 
 function requestHeader(request, name) {
@@ -458,7 +457,7 @@ function requestHeader(request, name) {
 
 function actorFromRequest(request) {
   if (request.headers["x-taskboard-client"] === "taskctl") {
-    return CODEX_AGENT_ACTOR;
+    return AGENT_ACTOR;
   }
 
   const rawId = requestHeader(request, "x-taskboard-user-id");
@@ -502,15 +501,15 @@ function actorFromRequest(request) {
 
 function parseAssigneeTarget(value) {
   if (value === undefined) return undefined;
-  if (value !== "current-user" && value !== "codex-agent") {
-    throw new ApiError(400, "INVALID_FIELD", "'assigneeTarget' must be current-user or codex-agent");
+  if (value !== "current-user" && value !== "agent") {
+    throw new ApiError(400, "INVALID_FIELD", "'assigneeTarget' must be current-user or agent");
   }
   return value;
 }
 
 function resolveAssignee(target, actor) {
   if (target === undefined) return actor;
-  if (target === "codex-agent") return CODEX_AGENT_ACTOR;
+  if (target === "agent") return AGENT_ACTOR;
   if (actor.type !== "user") {
     throw new ApiError(400, "INVALID_FIELD", "'current-user' requires a user request identity");
   }
@@ -875,48 +874,6 @@ function methodNotAllowed(response, allowed) {
   }, { allow: allowed.join(", ") });
 }
 
-function codexProjectRoot(state, projectId) {
-  if (!projectId || !state || typeof state !== "object") return null;
-  const project = state["local-projects"]?.[projectId];
-  const root = Array.isArray(project?.rootPaths) ? project.rootPaths[0] : null;
-  return typeof root === "string" && root.trim() ? root : null;
-}
-
-function latestThreadCwd(value, threadId) {
-  const matches = [];
-  const stack = [value];
-  while (stack.length > 0) {
-    const candidate = stack.pop();
-    if (!candidate || typeof candidate !== "object") continue;
-    if (candidate.conversationId === threadId && typeof candidate.cwd === "string" && candidate.cwd.trim()) {
-      matches.push(candidate);
-    }
-    stack.push(...(Array.isArray(candidate) ? candidate : Object.values(candidate)));
-  }
-  matches.sort((left, right) => Number(right.updatedAtMs ?? 0) - Number(left.updatedAtMs ?? 0));
-  return matches[0]?.cwd ?? null;
-}
-
-async function resolveProjectWorkspace(project, codexProjectId, codexThreadId, codexStatePath, codexProcessesPath) {
-  try {
-    const state = JSON.parse(await readFile(codexStatePath, "utf8"));
-    const assignment = state["thread-project-assignments"]?.[codexThreadId];
-    const root = codexProjectRoot(state, project.id)
-      ?? codexProjectRoot(state, codexProjectId)
-      ?? codexProjectRoot(state, assignment?.projectId)
-      ?? (typeof assignment?.cwd === "string" ? assignment.cwd : null);
-    if (root) return root;
-  } catch {}
-  if (project.workspacePath) return project.workspacePath;
-  if (!codexThreadId) return null;
-  try {
-    const processes = JSON.parse(await readFile(codexProcessesPath, "utf8"));
-    return latestThreadCwd(processes, codexThreadId);
-  } catch {
-    return null;
-  }
-}
-
 async function parseWorktrees(output) {
   const contexts = [];
   for (const block of output.trim().split(/\n\s*\n/)) {
@@ -978,22 +935,21 @@ async function scanDevelopmentContexts(workspacePath, processEnv = process.env) 
 
 export function resolveServerOptions(options = {}) {
   const environment = options.processEnv ?? process.env;
-  const configuredDataDirectory = options.dataDirectory ?? environment.CODEX_TASKBOARD_DATA_DIR;
+  const configuredDataDirectory = options.dataDirectory ?? environment.TASKBOARD_DATA_DIR;
   const dataDirectory = configuredDataDirectory
     ? path.resolve(configuredDataDirectory)
     : path.join(PROJECT_ROOT, ".data");
-  const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
   const instanceToken = String(
-    options.instanceToken ?? environment.CODEX_TASKBOARD_INSTANCE_TOKEN ?? "",
+    options.instanceToken ?? environment.TASKBOARD_INSTANCE_TOKEN ?? "",
   ).trim();
   if (instanceToken && !/^[a-z0-9-]{16,128}$/i.test(instanceToken)) {
-    throw new Error("CODEX_TASKBOARD_INSTANCE_TOKEN must be an identifier");
+    throw new Error("TASKBOARD_INSTANCE_TOKEN must be an identifier");
   }
   const instanceSecret = String(
-    options.instanceSecret ?? environment.CODEX_TASKBOARD_INSTANCE_SECRET ?? "",
+    options.instanceSecret ?? environment.TASKBOARD_INSTANCE_SECRET ?? "",
   ).trim();
   if (instanceToken && !/^[a-f0-9-]{32,128}$/i.test(instanceSecret)) {
-    throw new Error("CODEX_TASKBOARD_INSTANCE_SECRET must be set in launcher mode");
+    throw new Error("TASKBOARD_INSTANCE_SECRET must be set in launcher mode");
   }
   return {
     dataDirectory,
@@ -1001,31 +957,27 @@ export function resolveServerOptions(options = {}) {
     attachmentsDirectory: options.attachmentsDirectory ?? path.join(dataDirectory, "attachments"),
     clientStoragePath: options.clientStoragePath ?? path.join(dataDirectory, "client-storage.json"),
     staticDirectory: options.staticDirectory ?? path.join(PROJECT_ROOT, "dist", "web"),
-    codexStatePath: options.codexStatePath
-      ?? path.join(codexHome, ".codex-global-state.json"),
-    codexProcessesPath: options.codexProcessesPath
-      ?? path.join(codexHome, "process_manager", "chat_processes.json"),
     instanceToken,
     instanceSecret,
     trustedOrigins: parseTrustedOrigins(environment[TRUSTED_ORIGINS_ENV]),
     version: String(
-      options.version ?? environment.CODEX_TASKBOARD_VERSION ?? "development",
+      options.version ?? environment.TASKBOARD_VERSION ?? "development",
     ).trim(),
   };
 }
 
-export function resolvePort(value = process.env.CODEX_TASKBOARD_PORT ?? "47823") {
+export function resolvePort(value = process.env.TASKBOARD_PORT ?? "47823") {
   const port = typeof value === "number" ? value : Number(value);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error("CODEX_TASKBOARD_PORT must be an integer between 1 and 65535");
+    throw new Error("TASKBOARD_PORT must be an integer between 1 and 65535");
   }
   return port;
 }
 
-export function resolveHost(value = process.env.CODEX_TASKBOARD_HOST ?? "0.0.0.0") {
+export function resolveHost(value = process.env.TASKBOARD_HOST ?? "0.0.0.0") {
   const host = String(value).trim();
   if (host !== "127.0.0.1" && host !== "0.0.0.0") {
-    throw new Error("CODEX_TASKBOARD_HOST must be 127.0.0.1 or 0.0.0.0");
+    throw new Error("TASKBOARD_HOST must be 127.0.0.1 or 0.0.0.0");
   }
   return host;
 }
@@ -1105,7 +1057,7 @@ export function createTaskboardServer(options = {}) {
           "access-control-allow-headers",
           request.headers["access-control-request-headers"] ?? "content-type",
         );
-        response.setHeader("access-control-expose-headers", "x-codex-taskboard-proof");
+        response.setHeader("access-control-expose-headers", "x-taskboard-proof");
         response.setHeader("access-control-allow-private-network", "true");
         response.setHeader("vary", "origin");
         if (request.method === "OPTIONS") {
@@ -1115,12 +1067,12 @@ export function createTaskboardServer(options = {}) {
         }
       }
       if (resolved.instanceToken && origin === "app://-") {
-        const challenge = request.headers["x-codex-taskboard-challenge"];
+        const challenge = request.headers["x-taskboard-challenge"];
         if (typeof challenge !== "string" || !/^[a-f0-9]{32,128}$/i.test(challenge)) {
           throw new ApiError(401, "INVALID_INSTANCE_CHALLENGE", "Launcher challenge is required");
         }
         response.setHeader(
-          "x-codex-taskboard-proof",
+          "x-taskboard-proof",
           createHmac("sha256", resolved.instanceSecret).update(challenge).digest("hex"),
         );
       }
@@ -1129,13 +1081,13 @@ export function createTaskboardServer(options = {}) {
       if (pathname === "/health") {
         if (request.method !== "GET") return methodNotAllowed(response, ["GET"]);
         if (resolved.instanceToken) {
-          const challenge = request.headers["x-codex-taskboard-challenge"];
+          const challenge = request.headers["x-taskboard-challenge"];
           if (typeof challenge !== "string" || !/^[a-f0-9]{32,128}$/i.test(challenge)) {
             throw new ApiError(401, "INVALID_INSTANCE_CHALLENGE", "Launcher challenge is required");
           }
           return sendJson(response, 200, {
             status: "ok",
-            product: "codex-taskboard",
+            product: "taskboard",
             version: resolved.version,
             proof: createHmac("sha256", resolved.instanceSecret)
               .update(challenge)
@@ -1299,7 +1251,7 @@ export function createTaskboardServer(options = {}) {
       if (developmentContextsRoute) {
         if (request.method !== "GET") return methodNotAllowed(response, ["GET"]);
         const unknownQuery = [...url.searchParams.keys()].filter((key) => (
-          !["codexProjectId", "codexThreadId", "workspacePath"].includes(key)
+          key !== "workspacePath"
         ));
         if (unknownQuery.length > 0) {
           throw new ApiError(400, "UNKNOWN_QUERY_PARAMETER", `Unknown query parameter: ${unknownQuery[0]}`);
@@ -1313,14 +1265,6 @@ export function createTaskboardServer(options = {}) {
         validateProjectId(projectId);
         const project = database.getProject(projectId);
         if (!project) throw new ApiError(404, "PROJECT_NOT_FOUND", `Project '${projectId}' does not exist`);
-        const codexProjectId = stringField(url.searchParams.get("codexProjectId") ?? null, "codexProjectId", {
-          nullable: true,
-          maxLength: 128,
-        });
-        const codexThreadId = stringField(url.searchParams.get("codexThreadId") ?? null, "codexThreadId", {
-          nullable: true,
-          maxLength: 256,
-        });
         const deviceWorkspacePath = stringField(
           url.searchParams.get("workspacePath") ?? null,
           "workspacePath",
@@ -1329,13 +1273,7 @@ export function createTaskboardServer(options = {}) {
         if (deviceWorkspacePath?.includes("\0")) {
           throw new ApiError(400, "INVALID_FIELD", "'workspacePath' cannot contain null bytes");
         }
-        const workspacePath = deviceWorkspacePath ?? await resolveProjectWorkspace(
-          project,
-          codexProjectId,
-          codexThreadId,
-          resolved.codexStatePath,
-          resolved.codexProcessesPath,
-        );
+        const workspacePath = deviceWorkspacePath ?? project.workspacePath ?? null;
         return sendJson(
           response,
           200,

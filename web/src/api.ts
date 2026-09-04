@@ -2,7 +2,7 @@ import type {
   ActorIdentity,
   Attachment,
   Comment,
-  CodexThreadBinding,
+  AgentThreadBinding,
   DevelopmentScan,
   IssueRelationOrigin,
   IssueRelationType,
@@ -212,14 +212,10 @@ export async function deleteProject(projectId: string): Promise<void> {
 
 export async function listDevelopmentContexts(
   projectId: string,
-  codexProjectId?: string,
-  codexThreadId?: string,
   signal?: AbortSignal,
   workspacePath?: string,
 ): Promise<DevelopmentScan> {
   const query = new URLSearchParams();
-  if (codexProjectId) query.set("codexProjectId", codexProjectId);
-  if (codexThreadId) query.set("codexThreadId", codexThreadId);
   if (workspacePath) query.set("workspacePath", workspacePath);
   const suffix = query.size > 0 ? `?${query}` : "";
   return request<DevelopmentScan>(
@@ -275,7 +271,7 @@ export async function moveTask(
   task: Task,
   status: TaskStatus,
   sortOrder?: number,
-  threadBinding?: CodexThreadBinding | null,
+  threadBinding?: AgentThreadBinding | null,
   threadId?: string,
 ): Promise<Task> {
   const data = await request<{ task: Task }>(
@@ -386,7 +382,7 @@ export async function createComment(
   taskId: string,
   body: string,
   threadId?: string,
-  threadBinding?: CodexThreadBinding | null,
+  threadBinding?: AgentThreadBinding | null,
 ): Promise<Comment> {
   const data = await request<{ comment: Comment }>(
     `/api/tasks/${encodeURIComponent(taskId)}/comments`,

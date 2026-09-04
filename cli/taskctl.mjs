@@ -81,9 +81,9 @@ const COMMAND_OPTIONS = new Map([
     "status",
     "thread-id",
     "binding-thread-id",
-    "binding-codex-project-id",
-    "binding-codex-project-kind",
-    "binding-codex-host-id",
+    "binding-agent-project-id",
+    "binding-agent-project-kind",
+    "binding-agent-host-id",
     "binding-workspace-path",
     "clear-binding-thread",
     "if-version",
@@ -99,9 +99,9 @@ const COMMAND_OPTIONS = new Map([
     "body-file",
     "thread-id",
     "binding-thread-id",
-    "binding-codex-project-id",
-    "binding-codex-project-kind",
-    "binding-codex-host-id",
+    "binding-agent-project-id",
+    "binding-agent-project-kind",
+    "binding-agent-host-id",
     "binding-workspace-path",
     "clear-binding-thread",
     "json",
@@ -165,8 +165,8 @@ Actions:
     [--if-version N] [--json]
   move ISSUE_ID --status STATUS [--thread-id ID]
     [--binding-thread-id ID
-      [--binding-codex-project-id ID --binding-codex-project-kind local|remote
-       --binding-codex-host-id ID --binding-workspace-path PATH]
+      [--binding-agent-project-id ID --binding-agent-project-kind local|remote
+       --binding-agent-host-id ID --binding-workspace-path PATH]
      | --clear-binding-thread]
     [--if-version N] [--json]
   archive ISSUE_ID [--thread-id ID] [--if-version N] [--json]
@@ -310,7 +310,7 @@ async function execute(parsed, overrides) {
   const processEnv = overrides.env ?? process.env;
   const env = parsed.options["runtime-file"] === undefined
     ? processEnv
-    : { ...processEnv, CODEX_TASKBOARD_RUNTIME_FILE: parsed.options["runtime-file"] };
+    : { ...processEnv, TASKBOARD_RUNTIME_FILE: parsed.options["runtime-file"] };
   const target = await resolveTaskboardBaseUrl(env, overrides);
   const api = createApiClient(overrides, target);
   switch (command) {
@@ -826,9 +826,9 @@ async function moveIssue(api, taskId, options, overrides) {
 function threadBindingFromOptions(options) {
   const fields = [
     options["binding-thread-id"],
-    options["binding-codex-project-id"],
-    options["binding-codex-project-kind"],
-    options["binding-codex-host-id"],
+    options["binding-agent-project-id"],
+    options["binding-agent-project-kind"],
+    options["binding-agent-host-id"],
     options["binding-workspace-path"],
   ];
   if (options["clear-binding-thread"]) {
@@ -847,28 +847,28 @@ function threadBindingFromOptions(options) {
   if (identityFields.some((field) => field === undefined)) {
     throw usageError("Binding identity requires project id, kind, host id, and workspace path");
   }
-  const codexProjectId = options["binding-codex-project-id"].trim();
-  const codexProjectKind = options["binding-codex-project-kind"];
-  const codexHostId = options["binding-codex-host-id"].trim();
+  const agentProjectId = options["binding-agent-project-id"].trim();
+  const agentProjectKind = options["binding-agent-project-kind"];
+  const agentHostId = options["binding-agent-host-id"].trim();
   const workspacePath = options["binding-workspace-path"];
-  if (!codexProjectId || codexProjectId.length > 256) {
-    throw usageError("--binding-codex-project-id must contain 1 to 256 characters");
+  if (!agentProjectId || agentProjectId.length > 256) {
+    throw usageError("--binding-agent-project-id must contain 1 to 256 characters");
   }
-  if (codexProjectKind !== "local" && codexProjectKind !== "remote") {
-    throw usageError("--binding-codex-project-kind must be local or remote");
+  if (agentProjectKind !== "local" && agentProjectKind !== "remote") {
+    throw usageError("--binding-agent-project-kind must be local or remote");
   }
   if (
-    !codexHostId
-    || codexHostId.length > 256
-    || (codexProjectKind === "local" && codexHostId !== "local")
-    || (codexProjectKind === "remote" && codexHostId === "local")
+    !agentHostId
+    || agentHostId.length > 256
+    || (agentProjectKind === "local" && agentHostId !== "local")
+    || (agentProjectKind === "remote" && agentHostId === "local")
   ) {
-    throw usageError("--binding-codex-host-id does not match the project kind");
+    throw usageError("--binding-agent-host-id does not match the project kind");
   }
   if (!path.posix.isAbsolute(workspacePath) && !path.win32.isAbsolute(workspacePath)) {
     throw usageError("--binding-workspace-path must be absolute");
   }
-  return { threadId, codexProjectId, codexProjectKind, codexHostId, workspacePath };
+  return { threadId, agentProjectId, agentProjectKind, agentHostId, workspacePath };
 }
 
 async function archiveIssue(api, taskId, options, overrides, action) {
@@ -1020,13 +1020,13 @@ function recurrenceFromOptions(options) {
 
 function resolveThreadId(options, overrides) {
   const env = overrides.env ?? process.env;
-  const value = options["thread-id"] ?? env.CODEX_THREAD_ID;
+  const value = options["thread-id"] ?? env.TASKBOARD_THREAD_ID;
   if (typeof value !== "string" || value.trim().length === 0) {
-    throw usageError("Codex conversation attribution requires --thread-id or CODEX_THREAD_ID");
+    throw usageError("Conversation attribution requires --thread-id or TASKBOARD_THREAD_ID");
   }
   const threadId = value.trim();
   if (threadId.length > 256) {
-    throw usageError("--thread-id and CODEX_THREAD_ID cannot exceed 256 characters");
+    throw usageError("--thread-id and TASKBOARD_THREAD_ID cannot exceed 256 characters");
   }
   return threadId;
 }
@@ -1104,10 +1104,10 @@ function normalizeBaseUrl(rawUrl) {
   try {
     url = new URL(rawUrl);
   } catch {
-    throw usageError("CODEX_TASKBOARD_URL must be a valid URL");
+    throw usageError("TASKBOARD_URL must be a valid URL");
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw usageError("CODEX_TASKBOARD_URL must use http or https");
+    throw usageError("TASKBOARD_URL must use http or https");
   }
   url.pathname = url.pathname.replace(/\/$/, "");
   url.search = "";
@@ -1120,12 +1120,12 @@ function resolveApiUrl(baseUrl, pathname) {
 }
 
 async function resolveTaskboardBaseUrl(env, overrides) {
-  if (env.CODEX_TASKBOARD_URL !== undefined) {
-    return { url: env.CODEX_TASKBOARD_URL, windowsTransport: false };
+  if (env.TASKBOARD_URL !== undefined) {
+    return { url: env.TASKBOARD_URL, windowsTransport: false };
   }
-  const configuredDescriptorPath = env.CODEX_TASKBOARD_RUNTIME_FILE;
+  const configuredDescriptorPath = env.TASKBOARD_RUNTIME_FILE;
   const isWsl = isWslEnvironment(env);
-  const wslRuntimeFile = env.CODEX_TASKBOARD_WSL_RUNTIME_FILE;
+  const wslRuntimeFile = env.TASKBOARD_WSL_RUNTIME_FILE;
   const descriptorCandidates = configuredDescriptorPath !== undefined
     ? [{
       path: configuredDescriptorPath,
@@ -1211,7 +1211,7 @@ async function resolveWslRuntimeFile(overrides) {
     );
     const appDataPath = appData.stdout.trim();
     return appDataPath
-      ? path.join(appDataPath, "Codex Taskboard", "launcher-runtime.json")
+      ? path.join(appDataPath, "Taskboard", "launcher-runtime.json")
       : undefined;
   } catch {
     return undefined;
@@ -1220,7 +1220,7 @@ async function resolveWslRuntimeFile(overrides) {
 
 async function fetchThroughWindows(url, init, overrides) {
   const run = overrides.spawn ?? spawn;
-  const marker = "__CODEX_TASKBOARD_CURL_RESPONSE__";
+  const marker = "__TASKBOARD_CURL_RESPONSE__";
   const args = [
     "--disable",
     "--noproxy",

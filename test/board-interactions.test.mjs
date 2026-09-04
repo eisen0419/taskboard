@@ -131,14 +131,14 @@ test("common issue mutations enter a Linear-style undo queue", () => {
 
 test("issues expose processing conversations without manual binding", () => {
   assert.doesNotMatch(appSource, /detail-thread-button/);
-  assert.doesNotMatch(detailSource, /输入对话 ID|解除 Codex 对话绑定|>绑定</);
+  assert.doesNotMatch(detailSource, /输入对话 ID|解除对话绑定|>绑定</);
   assert.doesNotMatch(editorSource, /对话 ID|linkedThreadId/);
   assert.match(detailSource, /currentTask\.threadBinding \|\| currentTask\.legacyLocalThreadId/);
   assert.doesNotMatch(detailSource, /currentTask\.threadIds/);
-  assert.match(detailSource, /<strong>\{text\("查看对话", "View conversation"\)\}<\/strong>/);
+  assert.match(detailSource, /<strong>\{text\("复制会话 ID", "Copy thread ID"\)\}<\/strong>/);
   assert.doesNotMatch(detailSource, /className="conversation-thread-id">\{threadId\}/);
   assert.doesNotMatch(detailSource, /shortThreadId/);
-  assert.doesNotMatch(detailSource, /detail-property-label">Codex/);
+  assert.doesNotMatch(detailSource, /detail-property-label">会话/);
   assert.match(detailSource, /comment\.threadBinding \|\| comment\.legacyLocalThreadId/);
   assert.match(detailSource, /onOpenLegacyLocalThread\(comment\.legacyLocalThreadId!\)/);
   assert.doesNotMatch(detailSource, /compact/);
@@ -147,7 +147,7 @@ test("issues expose processing conversations without manual binding", () => {
   assert.match(detailSource, /context\.type === "branch"[\s\S]*?<BranchIcon[\s\S]*?<LinearIcon name="folder"/);
   assert.match(detailSource, /developmentContext/);
   assert.doesNotMatch(detailSource, /placeholder="绑定分支/);
-  assert.doesNotMatch(contextMenuSource, /打开关联 Codex 对话/);
+  assert.doesNotMatch(contextMenuSource, /打开关联对话/);
 });
 
 test("comments upload and render their own attachments in the content flow", () => {

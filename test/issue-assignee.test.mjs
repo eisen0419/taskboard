@@ -15,13 +15,13 @@ test("issue model and editor preserve a concrete assignee identity", async () =>
     source("web/src/components/TaskEditor.tsx"),
   ]);
 
-  assert.match(typesSource, /export type AssigneeTarget = "current-user" \| "codex-agent"/);
+  assert.match(typesSource, /export type AssigneeTarget = "current-user" \| "agent"/);
   assert.match(typesSource, /assignee: ActorIdentity/);
   assert.match(typesSource, /export interface TaskDraft \{[\s\S]*?assigneeTarget\?: AssigneeTarget/);
   assert.match(appSource, /assigneeTarget/);
   assert.match(editorSource, /currentUser: ActorIdentity/);
   assert.match(editorSource, /ariaLabel=\{text\("负责人", "Assignee"\)\}/);
-  assert.match(editorSource, /CODEX_AGENT_ACTOR/);
+  assert.match(editorSource, /AGENT_ACTOR/);
 });
 
 test("issue detail and cards expose the same assignee identity", async () => {

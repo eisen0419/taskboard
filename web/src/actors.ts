@@ -1,9 +1,9 @@
 import type { ActorIdentity, AssigneeTarget } from "./types";
 
-export const CODEX_AGENT_ACTOR: ActorIdentity = {
+export const AGENT_ACTOR: ActorIdentity = {
   type: "agent",
-  id: "codex-agent",
-  name: "Codex Agent",
+  id: "agent",
+  name: "Agent",
   avatarUrl: null,
 };
 
@@ -15,13 +15,13 @@ export function actorForAssigneeTarget(
   target: AssigneeTarget,
   currentUser: ActorIdentity,
 ): ActorIdentity {
-  return target === "codex-agent" ? CODEX_AGENT_ACTOR : currentUser;
+  return target === "agent" ? AGENT_ACTOR : currentUser;
 }
 
 export function assigneeTargetForActor(
   actor: ActorIdentity,
   currentUser: ActorIdentity,
 ): AssigneeTarget | undefined {
-  if (actor.type === "agent") return "codex-agent";
+  if (actor.type === "agent") return "agent";
   return actor.id === currentUser.id ? "current-user" : undefined;
 }
