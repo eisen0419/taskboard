@@ -9,6 +9,7 @@
 - 议题与任务书由 Fable 出，你不写议题不写任务书；有错按 orca-lab §5③ 请示，不自行改。
 - 你做：开工（lanes / 建队 / 建任务 / 驱动 / Monitor）、盯场、验收亲验、审查环转发、关议题、`lanes pr`、收尾。
 - 代码 commit 审查 PASS 后才 push；PR 合入是 Eisen 唯一的合入确认。
+- **选席**按 orca-lab ADR-0016 全局表（正店 = orca-lab `notes/orca-编排阵容与分工.md`「选席表」节），Fable 立项时写进议题正文「席位」行，你照做；没写的请示不自选。D26 对照期间机械 / docs-only 议题按账本交替（2026-09-04）。
 
 ## taskboard 差异（对照 orca-lab 逐条替换）
 
