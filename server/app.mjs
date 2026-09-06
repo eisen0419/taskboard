@@ -651,6 +651,15 @@ function parseCommentPatch(body) {
   };
 }
 
+function parseInboxItemPatch(body) {
+  assertPlainObject(body);
+  assertAllowedKeys(body, new Set(["state"]));
+  if (!new Set(["read", "unread", "archived"]).has(body.state)) {
+    throw new ApiError(400, "INVALID_FIELD", "'state' must be read, unread, or archived");
+  }
+  return { state: body.state };
+}
+
 function parseAttachmentHeaders(request) {
   const encodedFilename = request.headers["x-taskboard-filename"];
   if (typeof encodedFilename !== "string") {
@@ -806,8 +815,8 @@ class EventHub {
   emit(type, value) {
     const event = {
       type,
-      projectId: value.projectId ?? value.project?.id ?? value.task?.projectId,
-      taskId: value.task?.id ?? value.comment?.taskId ?? value.attachment?.taskId,
+      projectId: value.projectId ?? value.project?.id ?? value.task?.projectId ?? value.item?.projectId,
+      taskId: value.task?.id ?? value.comment?.taskId ?? value.attachment?.taskId ?? value.item?.taskId,
       ...value,
       at: new Date().toISOString(),
     };
@@ -1281,6 +1290,47 @@ export function createTaskboardServer(options = {}) {
         );
       }
 
+      if (pathname === "/api/inbox") {
+        if (request.method !== "GET") return methodNotAllowed(response, ["GET"]);
+        assertAllowedQuery(url.searchParams, new Set(["state"]), "GET /api/inbox");
+        const state = url.searchParams.get("state") ?? "unread";
+        if (state !== "unread" && state !== "all") {
+          throw new ApiError(400, "INVALID_FIELD", "'state' must be unread or all");
+        }
+        return sendJson(response, 200, database.listInbox(state));
+      }
+
+      if (pathname === "/api/inbox/read-all") {
+        if (request.method !== "POST") return methodNotAllowed(response, ["POST"]);
+        assertAllowedQuery(url.searchParams, new Set(), "POST /api/inbox/read-all");
+        await assertEmptyRequestBody(request, "POST /api/inbox/read-all");
+        const updated = database.readAllInbox();
+        events.emit("inbox.updated", { updated });
+        return sendJson(response, 200, { updated });
+      }
+
+      const inboxItemRoute = pathname.match(/^\/api\/inbox\/([^/]+)$/);
+      if (inboxItemRoute) {
+        let id;
+        try {
+          id = decodeURIComponent(inboxItemRoute[1]);
+        } catch {
+          throw new ApiError(400, "INVALID_PATH", "Inbox item id contains invalid encoding");
+        }
+        if (id.length === 0 || id.length > 128) {
+          throw new ApiError(400, "INVALID_PATH", "Inbox item id is invalid");
+        }
+        if (request.method !== "PATCH") return methodNotAllowed(response, ["PATCH"]);
+        assertAllowedQuery(url.searchParams, new Set(), "PATCH /api/inbox/:id");
+        const { state } = parseInboxItemPatch(await readJson(request));
+        if (!database.getInboxItem(id)) {
+          throw new ApiError(404, "INBOX_ITEM_NOT_FOUND", `Inbox item '${id}' does not exist`);
+        }
+        const item = database.updateInboxItem(id, state);
+        events.emit("inbox.updated", { item });
+        return sendJson(response, 200, { item });
+      }
+
       if (pathname === "/api/tasks") {
         if (request.method === "GET") {
           const filters = parseTaskFilters(url.searchParams);
@@ -1424,6 +1474,9 @@ export function createTaskboardServer(options = {}) {
           });
           const task = database.getTask(taskId);
           events.emit("comment.created", { comment, task });
+          if (comment.inboxItem) {
+            events.emit("inbox.item.created", { item: comment.inboxItem, task });
+          }
           return sendJson(response, 201, { comment });
         }
         return methodNotAllowed(response, ["GET", "POST"]);
@@ -1681,6 +1734,9 @@ export function createTaskboardServer(options = {}) {
           }
           const task = database.updateTask(id, version, changes, threadId, threadBinding, actor);
           events.emit("task.updated", { task });
+          if (task.inboxItem) {
+            events.emit("inbox.item.created", { item: task.inboxItem, task });
+          }
           return sendJson(response, 200, { task });
         }
         if (!action && request.method === "DELETE") {

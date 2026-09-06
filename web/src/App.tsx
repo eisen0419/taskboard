@@ -22,16 +22,20 @@ import {
   deleteArchivedTask as deleteArchivedTaskRequest,
   deleteProjectLabel as deleteProjectLabelRequest,
   deleteProject as deleteProjectRequest,
+  getTask as getTaskRequest,
   listArchivedTasks,
   listDevelopmentContexts,
+  listInbox,
   listProjects,
   listTasks,
   moveTask as moveTaskRequest,
+  readAllInbox,
   removeTaskRelation,
   resolveTaskboardUrl,
   restoreTask as restoreTaskRequest,
   setApiText,
   uploadAttachment,
+  updateInboxItem as updateInboxItemRequest,
   updateTask as updateTaskRequest,
 } from "./api";
 import {
@@ -46,6 +50,7 @@ import {
   type BoardDisplaySettings,
 } from "./components/BoardCardDisplayMenu";
 import { DashboardView } from "./components/DashboardView";
+import { InboxView } from "./components/InboxView";
 import { ProjectReadmeView } from "./components/ProjectReadmeView";
 import { IssueListView } from "./components/IssueListView";
 import { ArchivedTasksColumn, OtherTasksPanel } from "./components/OtherTasksPanel";
@@ -105,6 +110,7 @@ import {
   type ActorIdentity,
   type AgentThreadBinding,
   type DevelopmentScan,
+  type InboxItem,
   type IssueRelationOrigin,
   type IssueRelationType,
   type Project,
@@ -115,7 +121,7 @@ import {
 
 type ConnectionState = "connecting" | "live" | "reconnecting";
 type Theme = "light" | "dark";
-type BoardView = "readme" | "dashboard" | "issues" | "list" | "gantt";
+type BoardView = "readme" | "dashboard" | "inbox" | "issues" | "list" | "gantt";
 type DetailSourceScroll =
   | { projectId: string; view: "issues"; status: TaskStatus; scrollTop: number; scrollLeft: number }
   | { projectId: string; view: "list"; scrollTop: number };
@@ -199,7 +205,7 @@ function issueReadStorageKey(mode: string, task: Pick<Task, "id" | "projectId">)
 
 function readProjectBoardView(projectId: string): BoardView {
   const view = taskboardStorage.getItem(`${PROJECT_VIEW_KEY_PREFIX}${projectId}`);
-  return view === "readme" || view === "dashboard" || view === "list" || view === "gantt" || view === "issues"
+  return view === "readme" || view === "dashboard" || view === "inbox" || view === "list" || view === "gantt" || view === "issues"
     ? view
     : "issues";
 }
@@ -249,6 +255,8 @@ const EVENT_NAMES = [
   "project.labels.updated",
   "project.readme.updated",
   "client-storage.updated",
+  "inbox.item.created",
+  "inbox.updated",
 ] as const;
 
 function getInitialTheme(): Theme {
@@ -283,6 +291,7 @@ interface LocalRealtimeSyncProps {
     projectId: string,
     options?: { quiet?: boolean; signal?: AbortSignal },
   ) => Promise<void>;
+  refreshInbox: () => Promise<void>;
   refreshProjectBoardDisplaySettings: () => Promise<void>;
   setConnection: Dispatch<SetStateAction<ConnectionState>>;
   setCommentsRevision: Dispatch<SetStateAction<number>>;
@@ -295,6 +304,7 @@ function LocalRealtimeSync({
   detailTaskId,
   refreshProjectList,
   refreshTasks,
+  refreshInbox,
   refreshProjectBoardDisplaySettings,
   setConnection,
   setCommentsRevision,
@@ -339,6 +349,10 @@ function LocalRealtimeSync({
         && payload.key?.startsWith(PROJECT_BOARD_DISPLAY_SETTINGS_KEY_PREFIX)
       ) {
         void refreshProjectBoardDisplaySettings();
+        return;
+      }
+      if (event.type.startsWith("inbox.")) {
+        void refreshInbox();
         return;
       }
       const eventProjectId = payload.projectId ?? payload.project?.id;
@@ -402,6 +416,7 @@ function LocalRealtimeSync({
     };
   }, [
     detailTaskId,
+    refreshInbox,
     refreshProjectBoardDisplaySettings,
     refreshProjectList,
     refreshTasks,
@@ -431,6 +446,8 @@ export function App() {
   const [selectedProjectId, setSelectedProjectId] = useState(initialProjectId);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [archivedTasks, setArchivedTasks] = useState<Task[]>([]);
+  const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
+  const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [hasLoadedTasks, setHasLoadedTasks] = useState(false);
   const [projectLoadError, setProjectLoadError] = useState<ProjectLoadError | null>(null);
@@ -705,6 +722,61 @@ export function App() {
     window.history.pushState(window.history.state, "", detailUrl);
   }
 
+  async function openInboxTask(item: InboxItem) {
+    setActionError(null);
+    try {
+      const task = await getTaskRequest(item.taskId);
+      const switchingProject = selectedProjectId !== task.projectId;
+      if (switchingProject) setSelectedProjectId(task.projectId);
+      if (task.archivedAt) {
+        setArchivedTasks((current) => sortTasks([
+          ...(switchingProject ? [] : current.filter((candidate) => candidate.id !== task.id)),
+          task,
+        ]));
+      } else {
+        setTasks((current) => sortTasks([
+          ...(switchingProject ? [] : current.filter((candidate) => candidate.id !== task.id)),
+          task,
+        ]));
+      }
+      setBoardView("issues");
+      taskboardStorage.setItem(`${PROJECT_VIEW_KEY_PREFIX}${task.projectId}`, "issues");
+      openTaskDetail(task);
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  }
+
+  async function markInboxRead(id: string) {
+    setActionError(null);
+    try {
+      await updateInboxItemRequest(id, "read");
+      await refreshInbox();
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  }
+
+  async function archiveInboxItem(id: string) {
+    setActionError(null);
+    try {
+      await updateInboxItemRequest(id, "archived");
+      await refreshInbox();
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  }
+
+  async function markAllInboxRead() {
+    setActionError(null);
+    try {
+      await readAllInbox();
+      await refreshInbox();
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  }
+
   function closeTaskDetail() {
     const sourceProjectId = detailSourceProjectIdRef.current ?? selectedProjectId;
     detailSourceProjectIdRef.current = null;
@@ -956,6 +1028,20 @@ export function App() {
       if (!options.quiet && requestId === tasksRequestRef.current) setTasksLoading(false);
     }
   }, []);
+
+  const refreshInbox = useCallback(async () => {
+    try {
+      const inbox = await listInbox("unread");
+      setInboxItems(inbox.items);
+      setInboxUnreadCount(inbox.unreadCount);
+    } catch (error) {
+      console.error(error);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshInbox();
+  }, [refreshInbox]);
 
   useEffect(() => {
     if (!taskScopeProjectId) {
@@ -1842,6 +1928,7 @@ export function App() {
         detailTaskId={detailTaskId}
         refreshProjectList={refreshProjectList}
         refreshTasks={refreshTasks}
+        refreshInbox={refreshInbox}
         refreshProjectBoardDisplaySettings={refreshProjectBoardDisplaySettings}
         setConnection={setConnection}
         setCommentsRevision={setCommentsRevision}
@@ -2003,6 +2090,19 @@ export function App() {
               onClick={() => selectBoardView("dashboard")}
             >
               {text("仪表盘", "Dashboard")}
+            </button>
+            <button
+              className={`view-tab${boardView === "inbox" ? " active" : ""}`}
+              type="button"
+              aria-pressed={boardView === "inbox"}
+              onClick={() => selectBoardView("inbox")}
+            >
+              {text("收件箱", "Inbox")}
+              {inboxUnreadCount > 0 && (
+                <span className="inbox-unread-count" data-testid="inbox-unread-count">
+                  {inboxUnreadCount}
+                </span>
+              )}
             </button>
             <button
               className={`view-tab${boardView === "issues" ? " active" : ""}`}
@@ -2170,6 +2270,15 @@ export function App() {
             onOpenLegacyLocalThread={openLegacyLocalThread}
             onCopy={(text, message) => void copyText(text, message)}
             onError={setActionError}
+          />
+        ) : boardView === "inbox" ? (
+          <InboxView
+            items={inboxItems}
+            unreadCount={inboxUnreadCount}
+            onMarkRead={(id) => void markInboxRead(id)}
+            onArchive={(id) => void archiveInboxItem(id)}
+            onReadAll={() => void markAllInboxRead()}
+            onOpenTask={(item) => void openInboxTask(item)}
           />
         ) : boardView !== "readme"
           && hasLoadedTasks

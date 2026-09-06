@@ -6,6 +6,7 @@ import type {
   DevelopmentScan,
   IssueRelationOrigin,
   IssueRelationType,
+  InboxItem,
   Project,
   ProjectReadme,
   ProjectReadmeAttachment,
@@ -123,6 +124,29 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export async function listProjects(signal?: AbortSignal): Promise<Project[]> {
   const data = await request<{ projects: Project[] }>("/api/projects", { signal });
   return data.projects;
+}
+
+export async function listInbox(state: "unread" | "all" = "unread"): Promise<{
+  items: InboxItem[];
+  unreadCount: number;
+}> {
+  return request(`/api/inbox?state=${state}`);
+}
+
+export async function updateInboxItem(
+  id: string,
+  state: "read" | "unread" | "archived",
+): Promise<InboxItem> {
+  const data = await request<{ item: InboxItem }>(`/api/inbox/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ state }),
+  });
+  return data.item;
+}
+
+export async function readAllInbox(): Promise<number> {
+  const data = await request<{ updated: number }>("/api/inbox/read-all", { method: "POST" });
+  return data.updated;
 }
 
 export async function getProjectReadme(

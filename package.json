@@ -19,7 +19,7 @@
     "start": "node server/index.mjs",
     "taskctl": "node cli/taskctl.mjs",
     "test": "node --test && npm run test:components",
-    "test:components": "vitest run web/src/components/MarkdownDocument.test.tsx --environment jsdom",
+    "test:components": "vitest run web/src/components/MarkdownDocument.test.tsx web/src/components/InboxView.test.tsx --environment jsdom",
     "check": "npm run typecheck && npm run build && npm test"
   },
   "dependencies": {

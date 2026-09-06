@@ -23,6 +23,20 @@ export interface ActorIdentity {
   avatarUrl: string | null;
 }
 
+export interface InboxItem {
+  id: string;
+  taskId: string;
+  projectId: string;
+  taskTitle: string;
+  kind: "status_changed" | "comment_created";
+  severity: "action_required" | "attention" | "info";
+  summary: string;
+  actor: ActorIdentity;
+  createdAt: string;
+  readAt: string | null;
+  archivedAt: string | null;
+}
+
 export type DevelopmentContext =
   | { type: "branch"; branch: string }
   | { type: "worktree"; path: string; branch: string | null };
