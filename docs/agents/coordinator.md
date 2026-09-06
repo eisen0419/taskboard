@@ -22,7 +22,7 @@
 7. **Monitor 跨仓注入**：`TM_DRIVER_ROOT=/Users/happy/projects/taskboard TM_TEAM_JSON=.teams/<team>/team.json zsh /Users/happy/projects/orca-lab/tools/team-monitor <team> <gen>`。
 8. **收尾判据**：同 ziping 差异 7（journal 终态 `cleanup-exit-confirmed` / `unconfirmed`；席位窗清空以 `orca terminal list` 复核为唯一判据）。
 9. **本仓无 CODING_STANDARDS.md**：审查 Standards 轴对 orca-lab `CODING_STANDARDS.md` §2 / §3 / §6（验证纪律），代码风格按仓内既有风格（ESM、无框架 HTTP、`node:sqlite`、React 19 + Vite），不引入新依赖。
-10. **看板服务实例**：主仓 main 上跑着看板（`TASKBOARD_HOST=127.0.0.1`，#2 起；`CODEX_*` 环境变量已废；端口 47823；pid 记在 ziping SESSION-STATE），是 Eisen 正在看的板。worker 与你的冒烟一律用临时端口（实现席 47999、审查席 47998）与临时 DATA_DIR，不碰 47823、不碰主仓 `.data/`。#1 / #2 合入后由你：停旧进程 → `git pull` → `npm install && npm run build:web` → 重起服务 → `curl /health`。
+10. **看板服务实例**：主仓 main 上跑着看板（`TASKBOARD_HOST=127.0.0.1 TASKBOARD_TRUSTED_ORIGINS=https://happymac-mini.tailc17e94.ts.net`，#2 起；`CODEX_*` 环境变量已废；端口 47823；pid 记在 ziping SESSION-STATE；MacBook 经 Mac mini 的 `tailscale serve` 443→47823 打开 https://happymac-mini.tailc17e94.ts.net ，缺 TRUSTED_ORIGINS 该入口写请求会 403），是 Eisen 正在看的板。worker 与你的冒烟一律用临时端口（实现席 47999、审查席 47998）与临时 DATA_DIR，不碰 47823、不碰主仓 `.data/`。#1 / #2 合入后由你：停旧进程 → `git pull` → `npm install && npm run build:web` → 重起服务（带上述两个环境变量）→ `curl /health`。
 11. **请示通道**：同 ziping 差异 10（信箱）：`.scratch/ESCALATION-<n>.md`（本仓编号从 1 起，`.scratch/` 已排除）→ `tools/mail send --from opus --to fable --kind escalation --attach /Users/happy/projects/taskboard/.scratch/ESCALATION-<n>.md --terminal <Fable-handle>`。
 12. **进度记录**：写 ziping `.scratch/SESSION-STATE.md` 自己的进度段（协调席跨仓共用一份）。
 13. **任务书必含提交纪律节**（同 ziping 差异 13）。#1 是删除型议题，任务书明文允许 `git add -A -- . ':(exclude)…'`，这是该议题的例外不是新默认。
