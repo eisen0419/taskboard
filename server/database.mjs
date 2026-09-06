@@ -7,6 +7,20 @@ import { DEFAULT_LABEL_NAMES } from "../shared/domain.mjs";
 
 const DEFAULT_PROJECT_LABELS_JSON = JSON.stringify(DEFAULT_LABEL_NAMES);
 const TASK_TREE_MAX_NODES = 1_000;
+const TASK_STATUS_LABELS_ZH = {
+  backlog: "待立项",
+  todo: "等待认领",
+  in_progress: "处理中",
+  in_review: "等你确认",
+  blocked: "遇到阻碍",
+  done: "完成",
+  canceled: "取消",
+};
+const INBOX_STATUS_SEVERITIES = {
+  in_review: "action_required",
+  blocked: "attention",
+  done: "info",
+};
 
 export class ApiError extends Error {
   constructor(status, code, message, details) {
@@ -185,6 +199,32 @@ function taskActivityFromRow(row) {
     changes: JSON.parse(row.changes),
     createdAt: row.created_at,
   };
+}
+
+function inboxItemFromRow(row) {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    projectId: row.project_id,
+    taskTitle: row.task_title,
+    kind: row.kind,
+    severity: row.severity,
+    summary: row.summary,
+    actor: {
+      type: row.actor_type,
+      id: row.actor_id,
+      name: row.actor_name,
+      avatarUrl: row.actor_avatar_url,
+    },
+    createdAt: row.created_at,
+    readAt: row.read_at,
+    archivedAt: row.archived_at,
+  };
+}
+
+function agentCommentSummary(body) {
+  const excerpt = [...String(body).replace(/\s+/g, " ").trim()].slice(0, 80).join("");
+  return `Agent 评论「${excerpt}」`;
 }
 
 function taskFieldChanges(task, changes) {
@@ -467,6 +507,29 @@ export class TaskboardDatabase {
 
       CREATE INDEX IF NOT EXISTS task_activities_task_created
         ON task_activities(task_id, created_at, id);
+
+      CREATE TABLE IF NOT EXISTS inbox_items (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('status_changed', 'comment_created')),
+        severity TEXT NOT NULL CHECK (severity IN ('action_required', 'attention', 'info')),
+        summary TEXT NOT NULL,
+        actor_type TEXT NOT NULL CHECK (actor_type IN ('user', 'agent')),
+        actor_id TEXT NOT NULL,
+        actor_name TEXT NOT NULL,
+        actor_avatar_url TEXT,
+        source_id TEXT,
+        created_at TEXT NOT NULL,
+        read_at TEXT,
+        archived_at TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS inbox_items_state_created
+        ON inbox_items(read_at, archived_at, created_at);
+
+      CREATE INDEX IF NOT EXISTS inbox_items_task
+        ON inbox_items(task_id);
 
       CREATE TABLE IF NOT EXISTS attachments (
         id TEXT PRIMARY KEY,
@@ -1478,6 +1541,7 @@ export class TaskboardDatabase {
     const timestamp = now();
     values.push(timestamp, current.id, version);
 
+    let inboxItem = null;
     this.database.exec("BEGIN IMMEDIATE");
     try {
       const result = this.database.prepare(`
@@ -1504,12 +1568,32 @@ export class TaskboardDatabase {
         `).run(JSON.stringify(mergedLabels), timestamp, destinationProjectId);
       }
       this.#recordTaskActivity(current.id, actor, activityChanges, timestamp);
+      const inboxSeverity = actor.type === "agent"
+        && Object.hasOwn(changes, "status")
+        && changes.status !== current.status
+        ? INBOX_STATUS_SEVERITIES[changes.status]
+        : null;
+      if (inboxSeverity) {
+        const taskTitle = String(changes.title ?? current.title).replace(/\s+/g, " ").trim();
+        inboxItem = this.#createInboxItem({
+          taskId: current.id,
+          projectId: destinationProjectId,
+          kind: "status_changed",
+          severity: inboxSeverity,
+          summary: `Agent 把「${taskTitle}」改为 ${TASK_STATUS_LABELS_ZH[changes.status]}`,
+          actor,
+          sourceId: null,
+          timestamp,
+        });
+      }
       this.database.exec("COMMIT");
     } catch (error) {
       this.database.exec("ROLLBACK");
       throw error;
     }
-    return this.getTask(current.id);
+    const task = this.getTask(current.id);
+    Object.defineProperty(task, "inboxItem", { value: inboxItem });
+    return task;
   }
 
   moveTask(id, version, status, sortOrder, threadId, threadBinding, actor) {
@@ -1828,6 +1912,65 @@ export class TaskboardDatabase {
     `).all(task.id).map(taskActivityFromRow);
   }
 
+  listInbox(state = "unread") {
+    const condition = state === "unread"
+      ? "WHERE inbox_items.read_at IS NULL AND inbox_items.archived_at IS NULL"
+      : "";
+    const items = this.database.prepare(`
+      SELECT inbox_items.*, tasks.title AS task_title
+      FROM inbox_items
+      JOIN tasks ON tasks.id = inbox_items.task_id
+      ${condition}
+      ORDER BY inbox_items.created_at DESC, inbox_items.id DESC
+      LIMIT 200
+    `).all().map(inboxItemFromRow);
+    const unreadCount = this.database.prepare(`
+      SELECT COUNT(*) AS count
+      FROM inbox_items
+      WHERE read_at IS NULL AND archived_at IS NULL
+    `).get().count;
+    return { items, unreadCount };
+  }
+
+  getInboxItem(id) {
+    const row = this.database.prepare(`
+      SELECT inbox_items.*, tasks.title AS task_title
+      FROM inbox_items
+      JOIN tasks ON tasks.id = inbox_items.task_id
+      WHERE inbox_items.id = ?
+    `).get(id);
+    return row ? inboxItemFromRow(row) : null;
+  }
+
+  updateInboxItem(id, state) {
+    if (!this.getInboxItem(id)) {
+      throw new ApiError(404, "INBOX_ITEM_NOT_FOUND", `Inbox item '${id}' does not exist`);
+    }
+    const timestamp = now();
+    if (state === "read") {
+      this.database.prepare(`
+        UPDATE inbox_items SET read_at = ?, archived_at = NULL WHERE id = ?
+      `).run(timestamp, id);
+    } else if (state === "unread") {
+      this.database.prepare(`
+        UPDATE inbox_items SET read_at = NULL, archived_at = NULL WHERE id = ?
+      `).run(id);
+    } else {
+      this.database.prepare(`
+        UPDATE inbox_items SET read_at = ?, archived_at = ? WHERE id = ?
+      `).run(timestamp, timestamp, id);
+    }
+    return this.getInboxItem(id);
+  }
+
+  readAllInbox() {
+    return this.database.prepare(`
+      UPDATE inbox_items
+      SET read_at = ?
+      WHERE read_at IS NULL AND archived_at IS NULL
+    `).run(now()).changes;
+  }
+
   listComments(taskId) {
     const task = this.#requireTask(taskId);
     return this.database.prepare(`
@@ -1851,6 +1994,7 @@ export class TaskboardDatabase {
   createComment(taskId, input) {
     const id = randomUUID();
     const timestamp = now();
+    let inboxItem = null;
     this.database.exec("BEGIN IMMEDIATE");
     try {
       const task = this.#requireTask(taskId);
@@ -1875,12 +2019,26 @@ export class TaskboardDatabase {
         timestamp,
         changeRevision,
       );
+      if (input.actor.type === "agent") {
+        inboxItem = this.#createInboxItem({
+          taskId: task.id,
+          projectId: task.projectId,
+          kind: "comment_created",
+          severity: "attention",
+          summary: agentCommentSummary(input.body),
+          actor: input.actor,
+          sourceId: id,
+          timestamp,
+        });
+      }
       this.database.exec("COMMIT");
     } catch (error) {
       this.database.exec("ROLLBACK");
       throw error;
     }
-    return this.getComment(id);
+    const comment = this.getComment(id);
+    Object.defineProperty(comment, "inboxItem", { value: inboxItem });
+    return comment;
   }
 
   getComment(id) {
@@ -2244,6 +2402,31 @@ export class TaskboardDatabase {
       JSON.stringify(changes),
       timestamp,
     );
+  }
+
+  #createInboxItem({ taskId, projectId, kind, severity, summary, actor, sourceId, timestamp }) {
+    const id = randomUUID();
+    this.database.prepare(`
+      INSERT INTO inbox_items (
+        id, task_id, project_id, kind, severity, summary,
+        actor_type, actor_id, actor_name, actor_avatar_url,
+        source_id, created_at, read_at, archived_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+    `).run(
+      id,
+      taskId,
+      projectId,
+      kind,
+      severity,
+      summary,
+      actor.type,
+      actor.id,
+      actor.name,
+      actor.avatarUrl,
+      sourceId,
+      timestamp,
+    );
+    return this.getInboxItem(id);
   }
 
   #touchTask(id, version, threadId, threadBinding, timestamp) {
