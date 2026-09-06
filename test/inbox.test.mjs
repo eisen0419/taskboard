@@ -64,6 +64,25 @@ async function agentStatus(baseUrl, task, status) {
   return result.body.task;
 }
 
+async function agentMove(baseUrl, task, status, extra = {}) {
+  const result = await request(baseUrl, `/api/tasks/${task.id}/move`, {
+    method: "POST",
+    headers: AGENT_HEADERS,
+    body: { version: task.version, status, threadId: "thread-1", ...extra },
+  });
+  assert.equal(result.response.status, 200);
+  return result.body.task;
+}
+
+async function userMove(baseUrl, task, status, extra = {}) {
+  const result = await request(baseUrl, `/api/tasks/${task.id}/move`, {
+    method: "POST",
+    body: { version: task.version, status, ...extra },
+  });
+  assert.equal(result.response.status, 200);
+  return result.body.task;
+}
+
 async function unreadInbox(baseUrl) {
   const result = await request(baseUrl, "/api/inbox");
   assert.equal(result.response.status, 200);
@@ -248,5 +267,86 @@ test("inbox SSE broadcasts created and updated events", async () => {
   }
   assert.equal(messages.match(/^event: inbox\.item\.created$/gm).length, 2);
   assert.equal(messages.match(/^event: inbox\.updated$/gm).length, 2);
+  await reader.cancel();
+});
+
+test("agent move in_review -> action_required", async () => {
+  const baseUrl = await startServer();
+  const task = await createTask(baseUrl, "移动待确认事项");
+  await agentMove(baseUrl, task, "in_review");
+
+  const inbox = await unreadInbox(baseUrl);
+  assert.equal(inbox.unreadCount, 1);
+  assert.equal(inbox.items[0].kind, "status_changed");
+  assert.equal(inbox.items[0].severity, "action_required");
+  assert.equal(inbox.items[0].summary, "Agent 把「移动待确认事项」改为 等你确认");
+  assert.equal(inbox.items[0].actor.type, "agent");
+});
+
+test("agent move blocked -> attention", async () => {
+  const baseUrl = await startServer();
+  const task = await createTask(baseUrl, "移动阻塞事项");
+  await agentMove(baseUrl, task, "blocked");
+
+  const inbox = await unreadInbox(baseUrl);
+  assert.equal(inbox.unreadCount, 1);
+  assert.equal(inbox.items[0].severity, "attention");
+  assert.equal(inbox.items[0].summary, "Agent 把「移动阻塞事项」改为 遇到阻碍");
+});
+
+test("agent move done -> info", async () => {
+  const baseUrl = await startServer();
+  const task = await createTask(baseUrl, "移动完成事项");
+  await agentMove(baseUrl, task, "done");
+
+  const inbox = await unreadInbox(baseUrl);
+  assert.equal(inbox.unreadCount, 1);
+  assert.equal(inbox.items[0].severity, "info");
+  assert.equal(inbox.items[0].summary, "Agent 把「移动完成事项」改为 完成");
+});
+
+test("agent move same status -> none", async () => {
+  const baseUrl = await startServer();
+  const task = await createTask(baseUrl, "移动同状态事项");
+  const inReview = await agentStatus(baseUrl, task, "in_review");
+  assert.equal((await unreadInbox(baseUrl)).unreadCount, 1);
+
+  await agentMove(baseUrl, inReview, "in_review", { sortOrder: 5_000 });
+  assert.equal((await unreadInbox(baseUrl)).unreadCount, 1);
+});
+
+test("user move in_review -> none", async () => {
+  const baseUrl = await startServer();
+  const task = await createTask(baseUrl, "用户移动事项");
+  await userMove(baseUrl, task, "in_review");
+
+  assert.equal((await unreadInbox(baseUrl)).unreadCount, 0);
+});
+
+test("inbox SSE broadcasts on move", async () => {
+  const baseUrl = await startServer();
+  const task = await createTask(baseUrl, "移动实时收件箱");
+  const eventResponse = await fetch(`${baseUrl}/api/events`, { signal: AbortSignal.timeout(5_000) });
+  const reader = eventResponse.body.getReader();
+  const decoder = new TextDecoder();
+  await reader.read();
+
+  await agentMove(baseUrl, task, "in_review");
+
+  let messages = "";
+  while (!messages.includes("event: inbox.item.created")) {
+    const chunk = await reader.read();
+    assert.equal(chunk.done, false);
+    messages += decoder.decode(chunk.value, { stream: true });
+  }
+  const inboxMessage = messages
+    .split("\n\n")
+    .find((message) => message.startsWith("event: inbox.item.created\n"));
+  const dataLine = inboxMessage.split("\n").find((line) => line.startsWith("data: "));
+  const event = JSON.parse(dataLine.slice(6));
+  assert.equal(event.type, "inbox.item.created");
+  assert.ok(event.item);
+  assert.equal(event.taskId, task.id);
+  assert.equal(event.projectId, "local");
   await reader.cancel();
 });

@@ -1568,24 +1568,14 @@ export class TaskboardDatabase {
         `).run(JSON.stringify(mergedLabels), timestamp, destinationProjectId);
       }
       this.#recordTaskActivity(current.id, actor, activityChanges, timestamp);
-      const inboxSeverity = actor.type === "agent"
-        && Object.hasOwn(changes, "status")
-        && changes.status !== current.status
-        ? INBOX_STATUS_SEVERITIES[changes.status]
-        : null;
-      if (inboxSeverity) {
-        const taskTitle = String(changes.title ?? current.title).replace(/\s+/g, " ").trim();
-        inboxItem = this.#createInboxItem({
-          taskId: current.id,
-          projectId: destinationProjectId,
-          kind: "status_changed",
-          severity: inboxSeverity,
-          summary: `Agent 把「${taskTitle}」改为 ${TASK_STATUS_LABELS_ZH[changes.status]}`,
-          actor,
-          sourceId: null,
-          timestamp,
-        });
-      }
+      inboxItem = this.#statusChangeInboxItem({
+        current,
+        status: changes.status,
+        title: changes.title ?? current.title,
+        projectId: destinationProjectId,
+        actor,
+        timestamp,
+      });
       this.database.exec("COMMIT");
     } catch (error) {
       this.database.exec("ROLLBACK");
@@ -1624,6 +1614,7 @@ export class TaskboardDatabase {
       ? `thread_id = ?, thread_agent_project_id = ?, thread_agent_project_kind = ?,
         thread_agent_host_id = ?, thread_workspace_path = ?,`
       : "";
+    let inboxItem = null;
     this.database.exec("BEGIN IMMEDIATE");
     try {
       const result = this.database.prepare(`
@@ -1640,12 +1631,22 @@ export class TaskboardDatabase {
         taskFieldChanges(current, { status }),
         timestamp,
       );
+      inboxItem = this.#statusChangeInboxItem({
+        current,
+        status,
+        title: current.title,
+        projectId: current.projectId,
+        actor,
+        timestamp,
+      });
       this.database.exec("COMMIT");
     } catch (error) {
       this.database.exec("ROLLBACK");
       throw error;
     }
-    return this.getTask(current.id);
+    const task = this.getTask(current.id);
+    Object.defineProperty(task, "inboxItem", { value: inboxItem });
+    return task;
   }
 
   archiveTask(id, version, threadId, threadBinding, actor) {
@@ -2402,6 +2403,23 @@ export class TaskboardDatabase {
       JSON.stringify(changes),
       timestamp,
     );
+  }
+
+  #statusChangeInboxItem({ current, status, title, projectId, actor, timestamp }) {
+    if (actor.type !== "agent" || status === current.status) return null;
+    const severity = INBOX_STATUS_SEVERITIES[status];
+    if (!severity) return null;
+    const taskTitle = String(title).replace(/\s+/g, " ").trim();
+    return this.#createInboxItem({
+      taskId: current.id,
+      projectId,
+      kind: "status_changed",
+      severity,
+      summary: `Agent 把「${taskTitle}」改为 ${TASK_STATUS_LABELS_ZH[status]}`,
+      actor,
+      sourceId: null,
+      timestamp,
+    });
   }
 
   #createInboxItem({ taskId, projectId, kind, severity, summary, actor, sourceId, timestamp }) {

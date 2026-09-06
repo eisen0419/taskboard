@@ -1766,6 +1766,9 @@ export function createTaskboardServer(options = {}) {
             actorFromRequest(request),
           );
           events.emit("task.moved", { task });
+          if (task.inboxItem) {
+            events.emit("inbox.item.created", { item: task.inboxItem, task });
+          }
           return sendJson(response, 200, { task });
         }
         if (action === "archive" && request.method === "POST") {
