@@ -1,6 +1,6 @@
 # taskboard 协调席指令面
 
-> 2026-09-03 Eisen 拍板 D22–D24：本仓（复刻自 chuspeeism/dashi-taskboard v1.1.22）改造成我们自己的议题板。三层分工与 orca-lab 同构：worker（codex-sol / grok / claude-review 席位窗）→ 协调席（本文件的读者，现为 Grok #1）→ Fable（立项与裁决）。角色、审查环、验收纪律、收尾、请示动作全部以 `/Users/happy/projects/orca-lab/docs/agents/coordinator.md` 为准（先通读它），本文件只列 taskboard 差异。派活配方 = `orca-worker-howto` skill。
+> 2026-09-03 Eisen 拍板 D22–D24：本仓（复刻自 chuspeeism/dashi-taskboard v1.1.22）改造成我们自己的议题板。三层分工与 orca-lab 同构：worker（codex-sol / grok / claude-review 席位窗）→ 协调席（本文件的读者；orca-lab ADR-0020 起为 taskboard 自己的协调窗，cwd 本仓，不与 ziping / orca-lab 共用）→ Fable（本仓自己的 `/fable taskboard` 窗，立项与裁决）。角色、审查环、验收纪律、收尾、请示动作全部以 `/Users/happy/projects/orca-lab/docs/agents/coordinator.md` 为准（先通读它），本文件只列 taskboard 差异。派活配方 = `orca-worker-howto` skill。
 
 本文件从 D23 起用新词：议题（gh issue）、立项（写清议题与任务书）、执行（一个议题在一支 spec 分支上的一轮派工，`d<N>`）、任务（Orca task：实现 / 审查 / 修复）、工位（一个席位在本次执行里的 worktree + 窗，`tools/lanes` 的 lane）、验收（协调席核证据包）、合入确认（Eisen 合 PR）、请示（ESCALATION 文件名不变）。orca-lab 那份仍是旧词，对照表见 orca-lab #157 议题正文；#157 合入后见 orca-lab `CONTEXT.md`「弃用词」节。
 
@@ -22,9 +22,9 @@
 7. **Monitor 跨仓注入**：`TM_DRIVER_ROOT=/Users/happy/projects/taskboard TM_TEAM_JSON=.teams/<team>/team.json zsh /Users/happy/projects/orca-lab/tools/team-monitor <team> <gen>`。
 8. **收尾判据**：同 ziping 差异 7（journal 终态 `cleanup-exit-confirmed` / `unconfirmed`；席位窗清空以 `orca terminal list` 复核为唯一判据）。
 9. **本仓无 CODING_STANDARDS.md**：审查 Standards 轴对 orca-lab `CODING_STANDARDS.md` §2 / §3 / §6（验证纪律），代码风格按仓内既有风格（ESM、无框架 HTTP、`node:sqlite`、React 19 + Vite），不引入新依赖。
-10. **看板服务实例**：主仓 main 上跑着看板（`TASKBOARD_HOST=127.0.0.1 TASKBOARD_TRUSTED_ORIGINS=https://happymac-mini.tailc17e94.ts.net`，#2 起；`CODEX_*` 环境变量已废；端口 47823；pid 记在 ziping SESSION-STATE；MacBook 经 Mac mini 的 `tailscale serve` 443→47823 打开 https://happymac-mini.tailc17e94.ts.net ，缺 TRUSTED_ORIGINS 该入口写请求会 403），是 Eisen 正在看的板。worker 与你的冒烟一律用临时端口（实现席 47999、审查席 47998）与临时 DATA_DIR，不碰 47823、不碰主仓 `.data/`。#1 / #2 合入后由你：停旧进程 → `git pull` → `npm install && npm run build:web` → 重起服务（带上述两个环境变量）→ `curl /health`。
-11. **请示通道**：同 ziping 差异 10（信箱）：`.scratch/ESCALATION-<n>.md`（本仓编号从 1 起，`.scratch/` 已排除）→ `tools/mail send --from opus --to fable --kind escalation --attach /Users/happy/projects/taskboard/.scratch/ESCALATION-<n>.md --terminal <Fable-handle>`。
-12. **进度记录**：写 ziping `.scratch/SESSION-STATE.md` 自己的进度段（协调席跨仓共用一份）。
+10. **看板服务实例**：主仓 main 上跑着看板（`TASKBOARD_HOST=127.0.0.1 TASKBOARD_TRUSTED_ORIGINS=https://happymac-mini.tailc17e94.ts.net`，#2 起；`CODEX_*` 环境变量已废；端口 47823；pid 记在本仓 `.scratch/SESSION-STATE.md`；MacBook 经 Mac mini 的 `tailscale serve` 443→47823 打开 https://happymac-mini.tailc17e94.ts.net ，缺 TRUSTED_ORIGINS 该入口写请求会 403），是 Eisen 正在看的板。worker 与你的冒烟一律用临时端口（实现席 47999、审查席 47998）与临时 DATA_DIR，不碰 47823、不碰主仓 `.data/`。#1 / #2 合入后由你：停旧进程 → `git pull` → `npm install && npm run build:web` → 重起服务（带上述两个环境变量）→ `curl /health`。
+11. **请示通道**：同 ziping 差异 10（信箱）：`.scratch/ESCALATION-<n>.md`（本仓编号从 1 起，`.scratch/` 已排除）→ `ORCA_MAIL_ROOT=/Users/happy/projects/taskboard/.scratch/mail tools/mail send --from opus --to fable --kind escalation --attach /Users/happy/projects/taskboard/.scratch/ESCALATION-<n>.md --terminal <Fable-handle>`。**信箱根 = 本仓 `.scratch/mail`**（orca-lab ADR-0020，2026-09-06：每条 `tools/mail` 命令都前置该变量，check / ack / report 同法；首次 send 自动建目录）。过渡期例外：taskboard#5 在 Grok #1（ziping 对的协调席）手上跑到收场为止，期间 tb#5 的信仍走 orca-lab 根、正文首行标「tb#5」。
+12. **进度记录**：写本仓 `.scratch/SESSION-STATE.md`（orca-lab ADR-0020：窗标识、在途、ESCALATION 编号、看板 pid 都落本仓，不再写 ziping 的）。
 13. **任务书必含提交纪律节**（同 ziping 差异 13）。#1 是删除型议题，任务书明文允许 `git add -A -- . ':(exclude)…'`，这是该议题的例外不是新默认。
 14. **worker 指令面**：本仓 `AGENTS.md` 与 `CLAUDE.md` 已改成指针（指向任务书），上游的 Taskboard Delivery Workflow（认领 / E3 / taskctl 流转）不再适用；worker 若按它行事按偏离处理。
 15. **库副本**：`.scratch/fixtures/taskboard-12.sqlite`（12 条议题）给 #1 验收④用；#2 合入时未重灌，按 D36 用离线列改名脚本 `.scratch/seed/migrate-2.sh`（6 列 `thread_codex_*`→`thread_agent_*`、丢 `ai_chat_*`、`codex-agent`→`agent`）迁了活库，原库副本在 `.scratch/seed/`；该 fixture 仍是旧列名，#2 后要先过同一脚本才能喂新代码。
