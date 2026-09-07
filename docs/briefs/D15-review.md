@@ -19,7 +19,7 @@
 **定级**：产品行为缺陷（同任务第二事件没折叠或折成了错的行、已读行被折进去、severity 降级、不同任务折到一起、`collapsedCount` 缺失或不对、SSE 折叠时仍发 created 或新行发 updated、旧库起不来或列没加上、既有用例掉、事件名数 ≠ 17、pathspec 外有 diff）= 必修；徽标文案、样式、常量命名 = 建议级，写进「局限」。
 
 **逃避与拧松清单（机械核，先于两轴跑；命中任一即必修级，唯一豁免 = 议题验收明文要求该改动，VERDICT 里引原句）**：对 `git diff $(git merge-base origin/main HEAD)..HEAD` 逐项取值写进 VERDICT，五项全 0 也要写「清单 5 项全 0」。
-1. 断言被删或放宽：`test/**`、`InboxView.test.tsx` 删除行含 `assert|expect`（既有组件 fixture 补 `collapsedCount: 1` 不算）；新增 `\.skip\(|\.only\(|@ts-ignore|@ts-nocheck`；`# tests` < 147。
+1. 断言被删或放宽：`test/**`、`InboxView.test.tsx` 删除行含 `assert|expect`（两处豁免：既有组件 fixture 补 `collapsedCount: 1`；`inbox SSE broadcasts created and updated events` 用例内恰 5 处字面值 1→0 / 2→1 / 2→3，ESCALATION-5 裁，议题②原句「只许改它的 5 处字面值」；`git diff $base..HEAD -- test/inbox.test.mjs | grep -E '^-' | grep -vE '^---' | wc -l` ≤ 5 且逐行核在该用例块内，多一行或不在块内即命中）；新增 `\.skip\(|\.only\(|@ts-ignore|@ts-nocheck`；`# tests` < 147。
 2. 守卫被关：断言型命令后新增 `|| true`；新增空 `catch`；`assertTrustedNetworkRequest` / `assertAllowedQuery` / `assertAllowedKeys` 被绕过或删调用；CHECK 子句被删。
 3. 门禁被绕：`--no-verify|--force`。
 4. 判据被改：`docs/briefs/**` `docs/agents/**` `docs/research/**`（除本席自己的 `docs/research/D15/`）`AGENTS.md` `CLAUDE.md` `.teams-orca*.json` `shared/**` `cli/**` `web/src/App.tsx` `web/src/api.ts` `README*` `package*.json` 改动 = 命中，本议题无豁免。
