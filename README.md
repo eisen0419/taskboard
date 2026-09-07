@@ -18,6 +18,7 @@ Open `http://127.0.0.1:47823` after the server starts.
 taskctl project list --json
 taskctl issue create --project local --title "Ship the change" --json
 taskctl issue list --project local --json
+taskctl inbox list --json
 ```
 
 Run `npm link` if you want `taskctl` available directly on your shell path.

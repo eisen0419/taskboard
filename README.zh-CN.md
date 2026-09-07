@@ -18,6 +18,7 @@ npm start
 taskctl project list --json
 taskctl issue create --project local --title "交付改动" --json
 taskctl issue list --project local --json
+taskctl inbox list --json
 ```
 
 如需直接在 shell 中使用 `taskctl`，请运行 `npm link`。
