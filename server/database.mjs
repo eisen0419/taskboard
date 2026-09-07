@@ -1925,23 +1925,39 @@ export class TaskboardDatabase {
     `).all(task.id).map(taskActivityFromRow);
   }
 
-  listInbox(state = "unread") {
-    const condition = state === "unread"
-      ? "WHERE inbox_items.read_at IS NULL AND inbox_items.archived_at IS NULL"
-      : "";
+  listInbox(state = "unread", projectId = undefined) {
+    const conditions = [];
+    const values = [];
+    if (state === "unread") {
+      conditions.push("inbox_items.read_at IS NULL", "inbox_items.archived_at IS NULL");
+    }
+    if (projectId !== undefined) {
+      conditions.push("inbox_items.project_id = ?");
+      values.push(projectId);
+    }
     const items = this.database.prepare(`
       SELECT inbox_items.*, tasks.title AS task_title
       FROM inbox_items
       JOIN tasks ON tasks.id = inbox_items.task_id
-      ${condition}
+      ${conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""}
       ORDER BY inbox_items.created_at DESC, inbox_items.id DESC
       LIMIT 200
-    `).all().map(inboxItemFromRow);
+    `).all(...values).map(inboxItemFromRow);
+
+    const unreadConditions = [
+      "inbox_items.read_at IS NULL",
+      "inbox_items.archived_at IS NULL",
+    ];
+    const unreadValues = [];
+    if (projectId !== undefined) {
+      unreadConditions.push("inbox_items.project_id = ?");
+      unreadValues.push(projectId);
+    }
     const unreadCount = this.database.prepare(`
       SELECT COUNT(*) AS count
       FROM inbox_items
-      WHERE read_at IS NULL AND archived_at IS NULL
-    `).get().count;
+      WHERE ${unreadConditions.join(" AND ")}
+    `).get(...unreadValues).count;
     return { items, unreadCount };
   }
 

@@ -55,6 +55,24 @@ async function createTask(baseUrl, title) {
   return result.body.task;
 }
 
+async function createProject(baseUrl, id, name) {
+  const result = await request(baseUrl, "/api/projects", {
+    method: "POST",
+    body: { id, name },
+  });
+  assert.equal(result.response.status, 201);
+  return result.body.project;
+}
+
+async function createTaskIn(baseUrl, projectId, title) {
+  const result = await request(baseUrl, "/api/tasks", {
+    method: "POST",
+    body: { projectId, title },
+  });
+  assert.equal(result.response.status, 201);
+  return result.body.task;
+}
+
 async function agentStatus(baseUrl, task, status) {
   const result = await request(baseUrl, `/api/tasks/${task.id}`, {
     method: "PATCH",
@@ -89,6 +107,81 @@ async function unreadInbox(baseUrl) {
   assert.equal(result.response.status, 200);
   return result.body;
 }
+
+test("project filter: scopes items and unreadCount", async () => {
+  const baseUrl = await startServer();
+  await createProject(baseUrl, "beta", "Beta");
+  const localTask = await createTaskIn(baseUrl, "local", "本地待确认");
+  const betaTask = await createTaskIn(baseUrl, "beta", "Beta 阻塞");
+  await agentStatus(baseUrl, localTask, "in_review");
+  await agentStatus(baseUrl, betaTask, "blocked");
+
+  const local = await request(baseUrl, "/api/inbox?projectId=local");
+  assert.equal(local.response.status, 200);
+  assert.equal(local.body.items.length, 1);
+  assert.equal(local.body.items[0].taskId, localTask.id);
+  assert.equal(local.body.unreadCount, 1);
+
+  const beta = await request(baseUrl, "/api/inbox?projectId=beta");
+  assert.equal(beta.response.status, 200);
+  assert.equal(beta.body.items.length, 1);
+  assert.equal(beta.body.items[0].taskId, betaTask.id);
+  assert.equal(beta.body.unreadCount, 1);
+
+  const betaAll = await request(baseUrl, "/api/inbox?projectId=beta&state=all");
+  assert.equal(betaAll.response.status, 200);
+  assert.equal(betaAll.body.items.length, 1);
+  assert.equal(betaAll.body.items[0].taskId, betaTask.id);
+  assert.equal(betaAll.body.unreadCount, 1);
+});
+
+test("project filter: omitted projectId keeps the global view", async () => {
+  const baseUrl = await startServer();
+  await createProject(baseUrl, "beta", "Beta");
+  const localTask = await createTaskIn(baseUrl, "local", "全局本地事项");
+  const betaTask = await createTaskIn(baseUrl, "beta", "全局 Beta 事项");
+  await agentStatus(baseUrl, localTask, "in_review");
+  await agentStatus(baseUrl, betaTask, "blocked");
+
+  const inbox = await unreadInbox(baseUrl);
+  assert.deepEqual(Object.keys(inbox), ["items", "unreadCount"]);
+  assert.equal(inbox.items.length, 2);
+  assert.equal(inbox.unreadCount, 2);
+  assert.deepEqual(new Set(inbox.items.map((item) => item.taskId)), new Set([
+    localTask.id,
+    betaTask.id,
+  ]));
+});
+
+test("project filter: unknown project returns 404", async () => {
+  const baseUrl = await startServer();
+
+  const missing = await request(baseUrl, "/api/inbox?projectId=nope");
+  assert.equal(missing.response.status, 404);
+  assert.equal(missing.body.error.code, "PROJECT_NOT_FOUND");
+
+  const empty = await request(baseUrl, "/api/inbox?projectId=");
+  assert.equal(empty.response.status, 400);
+  assert.equal(empty.body.error.code, "INVALID_FIELD");
+});
+
+test("project filter: read-all stays global", async () => {
+  const baseUrl = await startServer();
+  await createProject(baseUrl, "beta", "Beta");
+  const localTask = await createTaskIn(baseUrl, "local", "清空本地事项");
+  const betaTask = await createTaskIn(baseUrl, "beta", "清空 Beta 事项");
+  await agentStatus(baseUrl, localTask, "in_review");
+  await agentStatus(baseUrl, betaTask, "blocked");
+
+  const readAll = await request(baseUrl, "/api/inbox/read-all", { method: "POST" });
+  assert.equal(readAll.response.status, 200);
+  assert.deepEqual(readAll.body, { updated: 2 });
+
+  const local = await request(baseUrl, "/api/inbox?projectId=local");
+  const beta = await request(baseUrl, "/api/inbox?projectId=beta");
+  assert.equal(local.body.unreadCount, 0);
+  assert.equal(beta.body.unreadCount, 0);
+});
 
 test("agent in_review -> action_required", async () => {
   const baseUrl = await startServer();

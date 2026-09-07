@@ -126,11 +126,13 @@ export async function listProjects(signal?: AbortSignal): Promise<Project[]> {
   return data.projects;
 }
 
-export async function listInbox(state: "unread" | "all" = "unread"): Promise<{
-  items: InboxItem[];
-  unreadCount: number;
-}> {
-  return request(`/api/inbox?state=${state}`);
+export async function listInbox(
+  state: "unread" | "all" = "unread",
+  projectId?: string,
+): Promise<{ items: InboxItem[]; unreadCount: number }> {
+  const search = new URLSearchParams({ state });
+  if (projectId) search.set("projectId", projectId);
+  return request(`/api/inbox?${search}`);
 }
 
 export async function updateInboxItem(
