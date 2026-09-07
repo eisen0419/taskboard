@@ -20,7 +20,8 @@
     "taskctl": "node cli/taskctl.mjs",
     "test": "node --test && npm run test:components",
     "test:components": "vitest run web/src/components/MarkdownDocument.test.tsx web/src/components/InboxView.test.tsx web/src/components/CommandPalette.test.tsx web/src/boardGrouping.test.tsx --environment jsdom",
-    "check": "npm run typecheck && npm run build && npm test"
+    "knip": "knip",
+    "check": "npm run typecheck && npm run knip && npm run build && npm test"
   },
   "dependencies": {
     "dhtmlx-gantt": "^10.0.0",
@@ -43,7 +44,6 @@
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
-    "smol-toml": "^1.8.0",
     "unified": "^11.0.5"
   },
   "devDependencies": {
@@ -53,6 +53,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "@testing-library/react": "^16.3.2",
     "jsdom": "^27.4.0",
+    "knip": "6.34.0",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"

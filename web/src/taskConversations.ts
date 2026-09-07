@@ -12,7 +12,7 @@ export interface TaskConversationItem {
   updatedAt: string;
 }
 
-export interface TaskProcessingPresentation {
+interface TaskProcessingPresentation {
   running: boolean;
   completed: number | null;
   total: number | null;
@@ -30,7 +30,7 @@ function normalizeThreadId(value: string | null | undefined) {
   return trimmed.replace(/^(?:local|cloud):/i, "").trim();
 }
 
-export function taskConversations(task: Task) {
+function taskConversations(task: Task) {
   const items = new Map<string, TaskConversationItem>();
 
   for (const ref of task.conversationRefs ?? []) {
