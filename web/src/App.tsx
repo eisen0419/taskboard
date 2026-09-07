@@ -450,6 +450,15 @@ export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState(initialProjectId);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [collapsedParents, setCollapsedParents] = useState<Set<string>>(() => new Set());
+  function toggleCollapsedParent(taskId: string) {
+    setCollapsedParents((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }
   const [archivedTasks, setArchivedTasks] = useState<Task[]>([]);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
@@ -2469,6 +2478,9 @@ export function App() {
                         }}
                         status={item}
                         tasks={tasksByStatus[item]}
+                        collapsedParents={
+                          collapsedParents
+                        }
                         presentations={taskPresentations}
                         now={processingNow}
                         emptyMessage={hasActiveTaskFilters
@@ -2496,6 +2508,7 @@ export function App() {
                         onDragEnd={endTaskDrag}
                         onDragEnter={setDropTarget}
                         onDrop={finishTaskDrop}
+                        onToggleCollapse={toggleCollapsedParent}
                         onOpenConversation={openTaskConversation}
                       />
                     ))}
