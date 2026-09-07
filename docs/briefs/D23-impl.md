@@ -30,7 +30,7 @@ grep -ci 'drag' web/src/components/BoardColumn.tsx                           # �
   ```
   算法：`ids = new Set(tasks.map(t => t.id))`；`parentOf(t) = t.relations.parent?.id`，仅当 `ids.has(parentOf(t))` 才算「父在本列」；`isNested(t) = 父在本列 && !父在本列(父任务)`（一层封顶）；按原顺序遍历：`isNested` 的先跳过；非嵌套的推 `{ task, depth: 0, childCount: 子数, hidden: false }`，随后把所有 `isNested && parentOf === t.id` 的子任务按原相对顺序推 `{ task, depth: 1, childCount: 0, hidden: collapsedParents.has(t.id) }`。用 `Map<parentId, T[]>` 预分组，O(n)。不 import React、不 import `types.ts`（泛型约束就够，测试才不用造完整 `Task`）。
 - **单测** `web/src/boardGrouping.test.ts`（vitest，纯逻辑不需要 jsdom 但跑在同一命令里没关系）：`const t = (id, parent = null) => ({ id, relations: { parent: parent ? { id: parent } : null } })`。六个用例标题逐字含议题①的六个串：无关系保序；`[P, X, c1, c2]` → `P, c1, c2, X` 且 c1/c2 `depth 1`；父在别列（不在数组里）→ 平铺 `depth 0`；`[P, c, g]`（g 的父是 c，c 的父是 P）→ g `depth 0` 平铺、c `depth 1`；`collapsedParents = {P}` → c1/c2 `hidden true`、P 仍 `childCount 2`；`childCount` 精确等于嵌套子数（X 为 0）。`package.json:22` `test:components` 追加 `web/src/boardGrouping.test.ts`（空格分隔，别改成 glob）。
-- **BoardColumn** `web/src/components/BoardColumn.tsx`：props 加 `collapsedParents: ReadonlySet<string>; onToggleCollapse: (taskId: string) => void;`。函数体开头 `const rows = groupColumnTasks(tasks, collapsedParents); const orderedTasks = rows.map((row) => row.task);`，把 `taskIndexes` / `remainingTasks` / `remainingIndexes` 三个 Map 的数据源从 `tasks` 改为 `orderedTasks`（拖拽位移按视觉顺序算；**不动 `findDropBefore` / `handleDrop` / `getTaskDragShift` / 任何含 drag 的行**）。`:172` `tasks.map(...)` 改为 `rows.map((row) => { if (row.hidden) return null; const { task } = row; … })`：卡片 JSX 原样（`<TaskCard key={task.id} …/>`）；`row.depth === 1` 时外面包 `<div className="board-card-nested" data-depth="1" key={task.id}>…</div>`（key 移到外层）；`row.childCount > 0` 时在 `<TaskCard>` 之后同级渲染
+- **BoardColumn** `web/src/components/BoardColumn.tsx`：props 加 `collapsedParents: ReadonlySet<string>; onToggleCollapse: (taskId: string) => void;`。**解构里把 `tasks` 改名为 `tasks: columnTasks`**（逐字，判据 grep），函数体开头 `const rows = groupColumnTasks(columnTasks, collapsedParents); const tasks = rows.map((row) => row.task);`——这样 `taskIndexes` / `remainingTasks` / `remainingIndexes` 三个 Map、列头 `tasks.length`、空态判断全部自动用视觉顺序，**那三行以及 `findDropBefore` / `handleDrop` / `getTaskDragShift` / 任何含 drag 的行一字不动**（ESCALATION-7 裁：`remainingTasks` 那行含 `draggedTaskId`，不能改它）。`:172` `tasks.map(...)` 改为 `rows.map((row) => { if (row.hidden) return null; const { task } = row; … })`：卡片 JSX 原样（`<TaskCard key={task.id} …/>`）；`row.depth === 1` 时外面包 `<div className="board-card-nested" data-depth="1" key={task.id}>…</div>`（key 移到外层）；`row.childCount > 0` 时在 `<TaskCard>` 之后同级渲染
   ```tsx
   <button type="button" className="subtask-toggle" data-testid="subtask-toggle" aria-expanded={!collapsedParents.has(task.id)} onClick={() => onToggleCollapse(task.id)}>
     {collapsedParents.has(task.id) ? "▸" : "▾"} {text(`${row.childCount} 个子任务`, `${row.childCount} sub-issues`)}
@@ -43,7 +43,7 @@ grep -ci 'drag' web/src/components/BoardColumn.tsx                           # �
 ## 你要做的 6 件（= 议题验收 ①–⑥）
 
 **① 纯函数 + 六个单测 + package.json 一行。**
-**② BoardColumn**：五个 grep 判据 + 拖拽零删除行 + TaskCard 零 diff。
+**② BoardColumn**：五个 grep 判据 + `tasks: columnTasks` 解构 + 拖拽零删除行 + TaskCard 零 diff。
 **③ App**：state + toggle + 两个 prop。
 **④ 回归**：typecheck / build / check 全 e=0；node 158；vitest ≥ 26；pathspec 外零 diff。
 **⑤ 冒烟**：下节全段贴 report。

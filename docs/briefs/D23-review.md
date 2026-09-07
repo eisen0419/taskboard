@@ -10,7 +10,7 @@
 
 ## 两轴分开判，不跨轴排名
 
-**Standards 轴**：本仓无 CODING_STANDARDS.md，对 `/Users/happy/projects/orca-lab/CODING_STANDARDS.md` §2（验证）、§3（本机工具陷阱）、§6（测试与断言）逐条判 report 里的取值方式。代码层另看：`groupColumnTasks` 是否纯函数、泛型约束是否只用 `id` / `relations.parent.id`（不 import React / types）；算法是否 O(n)（Map 预分组，不是每个父任务 filter 一遍）；`BoardColumn` 是否只把三个 Map 的数据源换成 `orderedTasks`、渲染循环换成 rows，含 `drag` 的行零删除；`TaskCard` 零 diff；App 只加 state + toggle + 两个 prop；样式只用现有变量；重复、过长函数、散弹式修改、猜测性抽象（Fowler 味道基线）。每条写「符合 / 违反 / 不适用」，违反的给 `file:line` 与你自己跑的命令。
+**Standards 轴**：本仓无 CODING_STANDARDS.md，对 `/Users/happy/projects/orca-lab/CODING_STANDARDS.md` §2（验证）、§3（本机工具陷阱）、§6（测试与断言）逐条判 report 里的取值方式。代码层另看：`groupColumnTasks` 是否纯函数、泛型约束是否只用 `id` / `relations.parent.id`（不 import React / types）；算法是否 O(n)（Map 预分组，不是每个父任务 filter 一遍）；`BoardColumn` 是否只是 props 解构改名 `tasks: columnTasks` + 局部 `const tasks = rows.map(...)` 重绑定、渲染循环换成 rows，三个 Map 与所有含 `drag` 的行零删除（ESCALATION-7）；`TaskCard` 零 diff；App 只加 state + toggle + 两个 prop；样式只用现有变量；重复、过长函数、散弹式修改、猜测性抽象（Fowler 味道基线）。每条写「符合 / 违反 / 不适用」，违反的给 `file:line` 与你自己跑的命令。
 
 **Spec 轴**：逐条对议题「验收」6 条，判「做到 / 半做 / 没做 / 做错」，每条给出你自己跑的命令与结果（①②③ 的 grep / diff 判据逐字跑；① 六串各 `grep -c -F`，读用例体确认断言的是行数组的 `depth` / `childCount` / `hidden` / 顺序，不是只断言长度；④ `npm run typecheck` / `build` / `check` 亲跑取尾三数与 vitest 行 + 越界 diff；⑤ 冒烟亲跑（端口 **47998**，别用 47999））。先把条数写在 verdict 开头。Out of scope 4 条做了也算做错（尤其：动了 `server/` `cli/` `test/` `types.ts` `api.ts` `TaskCard.tsx` `OtherTasksPanel.tsx`、改了拖放、做了落盘、做了多层嵌套）。
 
@@ -32,7 +32,7 @@
 1. **无关系保序**：对 `groupColumnTasks([a, b, c], new Set())` 断言输出 id 顺序与输入一致且全 `depth 0`（用例应有；没有你就在 VERDICT 里用 `node -e` 跑一次贴取值）。
 2. **子任务先于父出现在输入里**：`[c1, P, c2]` → 输出 `P, c1, c2`（子任务在父之前的原位置被移除，不重复）。
 3. **父在本列但父自己是嵌套行**：`[P, c, g]`（g→c→P）→ g `depth 0` 平铺；再对 `collapsedParents = {c}` 断言 g 不受影响（c 不是 depth 0，没有开关）。
-4. **折叠后拖拽落点**：读 `findDropBefore`，确认它仍按 DOM `[data-task-id]` 取落点，隐藏的子任务不在 DOM 所以不会成为落点；`getTaskDragShift` 用的 Map 数据源是 `orderedTasks`。贴行。
+4. **折叠后拖拽落点**：读 `findDropBefore`，确认它仍按 DOM `[data-task-id]` 取落点，隐藏的子任务不在 DOM 所以不会成为落点；`getTaskDragShift` 用的 Map 数据源是局部 `tasks`（= rows 顺序），`remainingTasks` 那行与基线逐字相同。贴行。
 5. **列头计数**：折叠后 `tasks.length` 不变（浏览器或读代码）。
 6. **diff 体积**：`git diff --stat $base..HEAD` 原样贴；`BoardColumn.tsx` 净增 ≤ 45、`App.tsx` ≤ +20、`boardGrouping.ts` ≤ 60 行。超过写进「局限」不计 finding。
 7. **真浏览器**：见上节。
