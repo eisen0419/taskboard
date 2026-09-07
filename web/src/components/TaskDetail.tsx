@@ -373,6 +373,7 @@ export function TaskDetail({
   const [attachmentsError, setAttachmentsError] = useState<TaskDetailError | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [taskActivities, setTaskActivities] = useState<TaskChangeActivity[]>([]);
+  const [activitiesTruncated, setActivitiesTruncated] = useState(false);
   const [commentsLoading, setCommentsLoading] = useState(true);
   const [commentsError, setCommentsError] = useState<TaskDetailError | null>(null);
   const [commentSegments, setCommentSegments] = useState<InlineMediaSegment[]>(
@@ -470,7 +471,8 @@ export function TaskDetail({
     ]).then(
       ([nextComments, nextActivities]) => {
         setComments(nextComments);
-        setTaskActivities(nextActivities);
+        setTaskActivities(nextActivities.activities);
+        setActivitiesTruncated(nextActivities.hasMore);
         setCommentsLoading(false);
       },
       (error) => {
@@ -1198,6 +1200,8 @@ export function TaskDetail({
                     <time title={exactTime(currentTask.createdAt, locale)}>{relativeTime(currentTask.createdAt, locale)}</time>
                   </p>
                 </div>
+
+                {activitiesTruncated && <p className="activity-truncated">{text("仅显示最近 100 条活动", "Showing the latest 100 activities")}</p>}
 
                 {commentsLoading ? (
                   <div className="comments-loading" aria-label={text("正在加载活动", "Loading activity")} aria-busy="true"><i /><i /></div>

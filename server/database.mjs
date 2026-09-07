@@ -1916,13 +1916,21 @@ export class TaskboardDatabase {
     }
   }
 
-  listTaskActivities(taskId) {
+  listTaskActivities(taskId, limit = 100) {
     const task = this.#requireTask(taskId);
-    return this.database.prepare(`
-      SELECT * FROM task_activities
-      WHERE task_id = ?
+    const activities = this.database.prepare(`
+      SELECT * FROM (
+        SELECT * FROM task_activities
+        WHERE task_id = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+      )
       ORDER BY created_at, id
-    `).all(task.id).map(taskActivityFromRow);
+    `).all(task.id, limit).map(taskActivityFromRow);
+    const total = this.database.prepare(`
+      SELECT COUNT(*) AS count FROM task_activities WHERE task_id = ?
+    `).get(task.id).count;
+    return { activities, hasMore: total > limit };
   }
 
   listInbox(state = "unread", projectId = undefined) {

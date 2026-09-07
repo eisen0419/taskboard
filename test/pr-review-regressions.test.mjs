@@ -27,7 +27,7 @@ test("task list activity queries project metadata while detail routes retain ful
   );
   const localDetailQuery = between(
     databaseSource,
-    "  listTaskActivities(taskId)",
+    "  listTaskActivities(taskId, ",
     "  listComments(taskId)",
   );
   for (const listQuery of [localListQuery]) {
