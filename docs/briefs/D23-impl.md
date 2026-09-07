@@ -2,7 +2,7 @@
 
 > 🔴 **先读议题 <https://github.com/eisen0419/taskboard/issues/23>（`gh issue view 23 --comments`）——判据真源是它的「验收（可数）」6 条与「Out of scope」4 条。** 背景：D7 F3（`docs/research/D7/multica-reference-2.md`）。活库现在 0 条 parent 关系，一切用临时库造数验证。
 
-席位：`codex-sol`。分支：`spec/23`，**baseSha = `2b4436a`**（taskboard main，写单时 HEAD；行号取自它；计数与 diff 用 `base=$(git merge-base origin/main HEAD)`）。允许 pathspec：`web/src/boardGrouping.ts`（新建）、`web/src/boardGrouping.test.ts`（新建）、`web/src/components/BoardColumn.tsx`、`web/src/App.tsx`、`web/src/styles.css`、`package.json`（**只许改 `test:components` 一行**）。**其余一律不动**：`package-lock.json`、`server/**`、`cli/**`、`shared/**`、`test/**`、`web/src/types.ts`、`web/src/api.ts`、`web/src/components/TaskCard.tsx`、`web/src/components/OtherTasksPanel.tsx`、其他 `components/*`、`docs/**`、`README*`、`AGENTS.md`、`CLAUDE.md`、`.teams-orca*.json`、`dist/**`。
+席位：`codex-sol`。分支：`spec/23`，**baseSha = `2b4436a`**（taskboard main，写单时 HEAD；行号取自它；计数与 diff 用 `base=$(git merge-base origin/main HEAD)`）。允许 pathspec：`web/src/boardGrouping.ts`（新建）、`web/src/boardGrouping.test.tsx`（新建）、`web/src/components/BoardColumn.tsx`、`web/src/App.tsx`、`web/src/styles.css`、`package.json`（**只许改 `test:components` 一行**）。**其余一律不动**：`package-lock.json`、`server/**`、`cli/**`、`shared/**`、`test/**`、`web/src/types.ts`、`web/src/api.ts`、`web/src/components/TaskCard.tsx`、`web/src/components/OtherTasksPanel.tsx`、其他 `components/*`、`docs/**`、`README*`、`AGENTS.md`、`CLAUDE.md`、`.teams-orca*.json`、`dist/**`。
 
 ## 先装依赖
 
@@ -29,7 +29,7 @@ grep -ci 'drag' web/src/components/BoardColumn.tsx                           # �
   ): ColumnRow<T>[]
   ```
   算法：`ids = new Set(tasks.map(t => t.id))`；`parentOf(t) = t.relations.parent?.id`，仅当 `ids.has(parentOf(t))` 才算「父在本列」；`isNested(t) = 父在本列 && !父在本列(父任务)`（一层封顶）；按原顺序遍历：`isNested` 的先跳过；非嵌套的推 `{ task, depth: 0, childCount: 子数, hidden: false }`，随后把所有 `isNested && parentOf === t.id` 的子任务按原相对顺序推 `{ task, depth: 1, childCount: 0, hidden: collapsedParents.has(t.id) }`。用 `Map<parentId, T[]>` 预分组，O(n)。不 import React、不 import `types.ts`（泛型约束就够，测试才不用造完整 `Task`）。
-- **单测** `web/src/boardGrouping.test.ts`（vitest，纯逻辑不需要 jsdom 但跑在同一命令里没关系）：`const t = (id, parent = null) => ({ id, relations: { parent: parent ? { id: parent } : null } })`。六个用例标题逐字含议题①的六个串：无关系保序；`[P, X, c1, c2]` → `P, c1, c2, X` 且 c1/c2 `depth 1`；父在别列（不在数组里）→ 平铺 `depth 0`；`[P, c, g]`（g 的父是 c，c 的父是 P）→ g `depth 0` 平铺、c `depth 1`；`collapsedParents = {P}` → c1/c2 `hidden true`、P 仍 `childCount 2`；`childCount` 精确等于嵌套子数（X 为 0）。`package.json:22` `test:components` 追加 `web/src/boardGrouping.test.ts`（空格分隔，别改成 glob）。
+- **单测** `web/src/boardGrouping.test.tsx`（vitest；**后缀必须是 `.test.tsx`**：工位 Node 22.23 的 `node --test` 默认会发现 `*.test.ts` 并因无扩展名 import 报错，`.tsx` 不在它的默认 glob 里，ESCALATION-8 裁；纯逻辑不需要 jsdom 但跑在同一命令里没关系）：`const t = (id, parent = null) => ({ id, relations: { parent: parent ? { id: parent } : null } })`。六个用例标题逐字含议题①的六个串：无关系保序；`[P, X, c1, c2]` → `P, c1, c2, X` 且 c1/c2 `depth 1`；父在别列（不在数组里）→ 平铺 `depth 0`；`[P, c, g]`（g 的父是 c，c 的父是 P）→ g `depth 0` 平铺、c `depth 1`；`collapsedParents = {P}` → c1/c2 `hidden true`、P 仍 `childCount 2`；`childCount` 精确等于嵌套子数（X 为 0）。`package.json:22` `test:components` 追加 `web/src/boardGrouping.test.tsx`（空格分隔，别改成 glob）。
 - **BoardColumn** `web/src/components/BoardColumn.tsx`：props 加 `collapsedParents: ReadonlySet<string>; onToggleCollapse: (taskId: string) => void;`。**解构里把 `tasks` 改名为 `tasks: columnTasks`**（逐字，判据 grep），函数体开头 `const rows = groupColumnTasks(columnTasks, collapsedParents); const tasks = rows.map((row) => row.task);`——这样 `taskIndexes` / `remainingTasks` / `remainingIndexes` 三个 Map、列头 `tasks.length`、空态判断全部自动用视觉顺序，**那三行以及 `findDropBefore` / `handleDrop` / `getTaskDragShift` / 任何含 drag 的行一字不动**（ESCALATION-7 裁：`remainingTasks` 那行含 `draggedTaskId`，不能改它）。`:172` `tasks.map(...)` 改为 `rows.map((row) => { if (row.hidden) return null; const { task } = row; … })`：卡片 JSX 原样（`<TaskCard key={task.id} …/>`）；`row.depth === 1` 时外面包 `<div className="board-card-nested" data-depth="1" key={task.id}>…</div>`（key 移到外层）；`row.childCount > 0` 时在 `<TaskCard>` 之后同级渲染
   ```tsx
   <button type="button" className="subtask-toggle" data-testid="subtask-toggle" aria-expanded={!collapsedParents.has(task.id)} onClick={() => onToggleCollapse(task.id)}>
@@ -95,7 +95,7 @@ kill $(lsof -tiTCP:47999 -sTCP:LISTEN); unset TASKBOARD_URL; echo "smoke done"
 
 ## 提交纪律
 
-- **恰一个 commit**：`git add -- web/src/boardGrouping.ts web/src/boardGrouping.test.ts web/src/components/BoardColumn.tsx web/src/App.tsx web/src/styles.css package.json` → `git commit -m "feat(board): nest and collapse same-column sub-issues under their parent (#23)"`。commit 后 `git diff-tree -r --numstat --no-commit-id HEAD | wc -l` = 6 且每行路径在 pathspec 内。
+- **恰一个 commit**：`git add -- web/src/boardGrouping.ts web/src/boardGrouping.test.tsx web/src/components/BoardColumn.tsx web/src/App.tsx web/src/styles.css package.json` → `git commit -m "feat(board): nest and collapse same-column sub-issues under their parent (#23)"`。commit 后 `git diff-tree -r --numstat --no-commit-id HEAD | wc -l` = 6 且每行路径在 pathspec 内。
 - 去 trailer 配方逐字：`git log -1 --format=%b > /tmp/t; grep -ci co-authored /tmp/t` → **非 0 才** `git commit --amend`。禁 `git commit-tree`、禁 `git reset`。
 - 🔴 禁 `git push`。
 
