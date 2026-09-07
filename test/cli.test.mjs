@@ -622,6 +622,131 @@ test("comment update and delete require an explicit version", async () => {
   assert.match(missingVersion.stderr.error.message, /--if-version/);
 });
 
+test("inbox list forwards --state", async () => {
+  const calls = [];
+  const unreadPayload = {
+    items: [{ id: "item-1", state: "unread" }],
+    unreadCount: 1,
+  };
+  const allPayload = {
+    items: [{ id: "item-1", state: "read" }],
+    unreadCount: 0,
+  };
+  const unreadResult = await run(["inbox", "list"], async (url, init) => {
+    calls.push({ url, init });
+    return response(unreadPayload);
+  });
+  const allResult = await run(["inbox", "list", "--state", "all"], async (url, init) => {
+    calls.push({ url, init });
+    return response(allPayload);
+  });
+
+  assert.equal(unreadResult.exitCode, 0);
+  assert.equal(allResult.exitCode, 0);
+  assert.deepEqual(unreadResult.stdout, { ...unreadPayload, schemaVersion: 2 });
+  assert.deepEqual(allResult.stdout, { ...allPayload, schemaVersion: 2 });
+  assert.equal(calls[0].url.pathname, "/api/inbox");
+  assert.equal(calls[0].url.search, "");
+  assert.equal(calls[0].init.method, "GET");
+  assert.equal(calls[0].init.headers["x-taskboard-client"], "taskctl");
+  assert.equal(calls[1].url.pathname, "/api/inbox");
+  assert.equal(calls[1].url.searchParams.get("state"), "all");
+  assert.equal(calls[1].init.method, "GET");
+  assert.equal(calls[1].init.headers["x-taskboard-client"], "taskctl");
+});
+
+test("inbox list rejects an invalid --state", async () => {
+  const invalidState = await run(
+    ["inbox", "list", "--state", "foo"],
+    async () => assert.fail("fetch should not be called"),
+  );
+  const extraOperand = await run(
+    ["inbox", "list", "extra"],
+    async () => assert.fail("fetch should not be called"),
+  );
+
+  assert.equal(invalidState.exitCode, 2);
+  assert.equal(invalidState.stderr.error.code, "USAGE_ERROR");
+  assert.match(invalidState.stderr.error.message, /unread/);
+  assert.match(invalidState.stderr.error.message, /all/);
+  assert.equal(extraOperand.exitCode, 2);
+  assert.equal(extraOperand.stderr.error.code, "USAGE_ERROR");
+});
+
+test("inbox mark patches the item state", async () => {
+  const calls = [];
+  const result = await run(
+    ["inbox", "mark", "item/1", "--state", "archived"],
+    async (url, init) => {
+      calls.push({ url, init });
+      return response({ item: { id: "item/1", state: "archived" } });
+    },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(calls[0].url.pathname, "/api/inbox/item%2F1");
+  assert.equal(calls[0].init.method, "PATCH");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { state: "archived" });
+});
+
+test("inbox mark requires a valid --state", async () => {
+  const missing = await run(
+    ["inbox", "mark", "item-1"],
+    async () => assert.fail("fetch should not be called"),
+  );
+  const invalid = await run(
+    ["inbox", "mark", "item-1", "--state", "gone"],
+    async () => assert.fail("fetch should not be called"),
+  );
+
+  assert.equal(missing.exitCode, 2);
+  assert.equal(missing.stderr.error.code, "USAGE_ERROR");
+  assert.match(missing.stderr.error.message, /--state/);
+  assert.equal(invalid.exitCode, 2);
+  assert.equal(invalid.stderr.error.code, "USAGE_ERROR");
+  assert.match(invalid.stderr.error.message, /archived/);
+});
+
+test("inbox read-all posts without a body", async () => {
+  const calls = [];
+  const result = await run(["inbox", "read-all"], async (url, init) => {
+    calls.push({ url, init });
+    return response({ updated: 2 });
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(calls[0].url.pathname, "/api/inbox/read-all");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[0].init.body, undefined);
+  assert.equal(calls[0].init.headers["content-type"], undefined);
+
+  const extraOperand = await run(
+    ["inbox", "read-all", "extra"],
+    async () => assert.fail("fetch should not be called"),
+  );
+  assert.equal(extraOperand.exitCode, 2);
+  assert.equal(extraOperand.stderr.error.code, "USAGE_ERROR");
+});
+
+test("inbox commands do not require conversation attribution", async () => {
+  const calls = [];
+  const fetch = async (url, init) => {
+    calls.push({ url, init });
+    if (url.pathname === "/api/inbox/read-all") return response({ updated: 0 });
+    if (init.method === "PATCH") return response({ item: { id: "x", state: "read" } });
+    return response({ items: [], unreadCount: 0 });
+  };
+
+  const listResult = await run(["inbox", "list"], fetch, { env: {} });
+  const markResult = await run(["inbox", "mark", "x", "--state", "read"], fetch, { env: {} });
+  const readAllResult = await run(["inbox", "read-all"], fetch, { env: {} });
+
+  assert.equal(listResult.exitCode, 0);
+  assert.equal(markResult.exitCode, 0);
+  assert.equal(readAllResult.exitCode, 0);
+  assert.equal(calls.length, 3);
+});
+
 test("context current selects the project with the most specific matching workspace", async () => {
   const repositoryPath = path.resolve("/work/repo");
   const appPath = path.join(repositoryPath, "packages", "app");
