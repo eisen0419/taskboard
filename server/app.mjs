@@ -791,6 +791,15 @@ function parseTaskTreeQuery(searchParams) {
   return { direction, depth };
 }
 
+function emitInboxItem(events, task, item) {
+  if (!item) return;
+  if (item.collapsedCount === 1) {
+    events.emit("inbox.item.created", { item, task });
+  } else {
+    events.emit("inbox.updated", { item, task });
+  }
+}
+
 class EventHub {
   constructor() {
     this.clients = new Set();
@@ -1474,9 +1483,7 @@ export function createTaskboardServer(options = {}) {
           });
           const task = database.getTask(taskId);
           events.emit("comment.created", { comment, task });
-          if (comment.inboxItem) {
-            events.emit("inbox.item.created", { item: comment.inboxItem, task });
-          }
+          emitInboxItem(events, task, comment.inboxItem);
           return sendJson(response, 201, { comment });
         }
         return methodNotAllowed(response, ["GET", "POST"]);
@@ -1734,9 +1741,7 @@ export function createTaskboardServer(options = {}) {
           }
           const task = database.updateTask(id, version, changes, threadId, threadBinding, actor);
           events.emit("task.updated", { task });
-          if (task.inboxItem) {
-            events.emit("inbox.item.created", { item: task.inboxItem, task });
-          }
+          emitInboxItem(events, task, task.inboxItem);
           return sendJson(response, 200, { task });
         }
         if (!action && request.method === "DELETE") {
@@ -1766,9 +1771,7 @@ export function createTaskboardServer(options = {}) {
             actorFromRequest(request),
           );
           events.emit("task.moved", { task });
-          if (task.inboxItem) {
-            events.emit("inbox.item.created", { item: task.inboxItem, task });
-          }
+          emitInboxItem(events, task, task.inboxItem);
           return sendJson(response, 200, { task });
         }
         if (action === "archive" && request.method === "POST") {
