@@ -73,7 +73,7 @@ const ICONS = {
   },
 } satisfies Record<string, { viewBox?: string; content: ReactNode }>;
 
-export type LinearIconName = keyof typeof ICONS;
+type LinearIconName = keyof typeof ICONS;
 
 interface LinearIconProps extends Omit<SVGProps<SVGSVGElement>, "children"> {
   name: LinearIconName;

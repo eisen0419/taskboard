@@ -7,7 +7,7 @@ import {
   WorkspaceWritePermissionIcon,
 } from "./SemanticIcons";
 
-export interface ComposerCompletionOption {
+interface ComposerCompletionOption {
   id: string;
   label: string;
   description: string | null;

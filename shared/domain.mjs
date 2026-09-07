@@ -7,7 +7,7 @@ export const TASK_STATUSES = [
   "done",
   "canceled",
 ];
-export const TASK_PRIORITIES = ["none", "urgent", "high", "medium", "low"];
+const TASK_PRIORITIES = ["none", "urgent", "high", "medium", "low"];
 
 export const DEFAULT_PROJECT_ID = "local";
 export const DEFAULT_LABEL_NAMES = [
