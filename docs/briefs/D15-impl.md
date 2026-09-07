@@ -12,7 +12,7 @@
 
 ```
 npm run check > /tmp/check0.log 2>&1; e=$?                                  # e=0；# tests 141 # pass 141 # fail 0；vitest「Tests 13 passed」
-grep -c -F 'collapsed_count' server/database.mjs                             # 0
+grep -c -F 'collapsed_count INTEGER NOT NULL DEFAULT 1' server/database.mjs  # 0（交付后 = 2：建表 1 + 迁移 1）
 grep -c -F 'function emitInboxItem' server/app.mjs                           # 0
 grep -c '.emit("inbox.item.created"' server/app.mjs                          # 3
 grep -cE '^test\(' test/inbox.test.mjs                                       # 14
@@ -25,13 +25,13 @@ grep -oE '\.emit\("[a-z.]+"' server/app.mjs | sort -u | wc -l                # 1
 - **表**：`server/database.mjs:511` `CREATE TABLE IF NOT EXISTS inbox_items (…)`：在 `archived_at TEXT` 之后加 `collapsed_count INTEGER NOT NULL DEFAULT 1`（逐字，判据 grep）。**迁移**：照 `:573-576` `projects.workspace_path` 的写法：`const inboxColumns = this.database.prepare("PRAGMA table_info(inbox_items)").all(); if (!inboxColumns.some((c) => c.name === "collapsed_count")) { this.database.exec("ALTER TABLE inbox_items ADD COLUMN collapsed_count INTEGER NOT NULL DEFAULT 1"); }`，放在同一段迁移里、建表之后。
 - **行映射** `:204` `inboxItemFromRow`：加 `collapsedCount: row.collapsed_count,`（逐字，放 `archivedAt` 之后）。
 - **写入** `:2425` `#createInboxItem({ taskId, projectId, kind, severity, summary, actor, sourceId, timestamp })`：先查 `SELECT id, severity FROM inbox_items WHERE task_id = ? AND read_at IS NULL AND archived_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1`；有 → `UPDATE inbox_items SET kind = ?, severity = ?, summary = ?, actor_type = ?, actor_id = ?, actor_name = ?, actor_avatar_url = ?, source_id = ?, created_at = ?, collapsed_count = collapsed_count + 1 WHERE id = ?`，severity 用 `higherSeverity(existing.severity, severity)`（模块级常量 `INBOX_SEVERITY_RANK = { action_required: 3, attention: 2, info: 1 }`），然后 `return this.getInboxItem(existing.id)`；无 → 现有 INSERT 加 `collapsed_count` 列值 1。两个调用方（`#statusChangeInboxItem` `:2408`、`createComment` `:2022`）已在各自事务内，不用改它们。
-- **路由** `server/app.mjs`：新增模块级 `function emitInboxItem(events, task, item) { if (!item) return; events.emit(item.collapsedCount === 1 ? "inbox.item.created" : "inbox.updated", { item, task }); }`，三处（`:1477-1479` 评论、`:1737-1739` PATCH、`:1769-1771` move）改为 `emitInboxItem(events, task, comment.inboxItem)` / `emitInboxItem(events, task, task.inboxItem)`。既有 `inbox.updated` 的两处（PATCH item `:1330`、read-all `:1308`）不动。
+- **路由** `server/app.mjs`：新增模块级 `function emitInboxItem(events, task, item) { if (!item) return; if (item.collapsedCount === 1) { events.emit("inbox.item.created", { item, task }); } else { events.emit("inbox.updated", { item, task }); } }`（**两个分支各自 `events.emit("<字面事件名>", …)`，不用三元表达式**：事件名必须是 `.emit(` 的字面首参，验收③的 created 计数与 17 个事件名清单都靠 `grep -oE '\.emit\("[a-z.]+"'` 抓），三处（`:1477-1479` 评论、`:1737-1739` PATCH、`:1769-1771` move）改为 `emitInboxItem(events, task, comment.inboxItem)` / `emitInboxItem(events, task, task.inboxItem)`。既有 `inbox.updated` 的两处（PATCH item `:1330`、read-all `:1308`）不动。
 - **Web**：`web/src/types.ts:26` `InboxItem` 加 `collapsedCount: number;`（逐字）；`web/src/components/InboxView.tsx:54` severity `<span>` 之后加 `{item.collapsedCount > 1 ? <span className="inbox-collapsed-count" data-testid="inbox-collapsed-count" title={text(\`${item.collapsedCount} 条通知已折叠\`, \`${item.collapsedCount} notifications folded\`)}>×{item.collapsedCount}</span> : null}`；样式加在 `web/src/styles.css` 收件箱那段。组件测试照 `InboxView.test.tsx:42` 的写法加一条 `it("renders the collapsed count badge only when folded", …)`（fixture 一条 `collapsedCount: 3` 断言 `getByTestId("inbox-collapsed-count").textContent` = `×3`，一条 `collapsedCount: 1` 断言 `queryByTestId` 为 null）。既有 4 条 fixture 补 `collapsedCount: 1` 让类型过。
 - **服务端测试** `test/inbox.test.mjs`：沿用 helper（`startServer` `:20` / `request` `:29` / `createTask` `:48` / `agentStatus` `:57` / `unreadInbox` `:67`、`agentMove` `:69` 附近）；SSE 用例照 `:217` 那条读流。迁移用例：`mkdtemp` 一个 DATA_DIR，用 `import { DatabaseSync } from "node:sqlite"` 在 `<dir>/taskboard.sqlite` 先 `exec` #9 版建表 SQL（`git show 198b31a:server/database.mjs` 里 `CREATE TABLE IF NOT EXISTS inbox_items` 那段，无 `collapsed_count`；`tasks` 表等由服务启动自建，所以只建 `inbox_items` 一张就够——若 FK 引用 `tasks` 导致建表失败，先 `PRAGMA foreign_keys = OFF`），关掉，再 `startServer` 指向该目录，断言 `PRAGMA table_info(inbox_items)` 含 `collapsed_count`（照 `test/server.test.mjs:227` 的取法）且 `GET /api/inbox` 200。**只许新建用例，不改既有 14 条。**
 
 ## 你要做的 6 件（= 议题验收 ①–⑥）
 
-**① 表 + 迁移 + 映射**：三个逐字串各 1；CHECK / 索引不动。
+**① 表 + 迁移 + 映射**：列定义字面 2（建表 + ALTER）、ALTER 字面 1、映射字面 1；CHECK / 索引不动。
 **② 六个新用例**（标题逐字含议题②的六个串）：
 - `fold: same task updates the existing unread item`：agent PATCH `in_review` → agent 评论 → `unreadCount` 1、`items[0].id` 不变、`collapsedCount` 2、`kind` `comment_created`、`summary` 以 `Agent 评论` 开头、`createdAt` 晚于第一次。
 - `fold: severity keeps the highest`：先 `in_review`（action_required）再评论（attention）→ 仍 `action_required`；另一任务先 `done`（info）再 `in_review` → 变 `action_required`。
