@@ -1301,12 +1301,19 @@ export function createTaskboardServer(options = {}) {
 
       if (pathname === "/api/inbox") {
         if (request.method !== "GET") return methodNotAllowed(response, ["GET"]);
-        assertAllowedQuery(url.searchParams, new Set(["state"]), "GET /api/inbox");
+        assertAllowedQuery(url.searchParams, new Set(["state", "projectId"]), "GET /api/inbox");
         const state = url.searchParams.get("state") ?? "unread";
+        const projectId = url.searchParams.get("projectId") ?? undefined;
         if (state !== "unread" && state !== "all") {
           throw new ApiError(400, "INVALID_FIELD", "'state' must be unread or all");
         }
-        return sendJson(response, 200, database.listInbox(state));
+        if (projectId === "") {
+          throw new ApiError(400, "INVALID_FIELD", "'projectId' must not be empty");
+        }
+        if (projectId !== undefined && !database.getProject(projectId)) {
+          throw new ApiError(404, "PROJECT_NOT_FOUND", `Project '${projectId}' does not exist`);
+        }
+        return sendJson(response, 200, database.listInbox(state, projectId));
       }
 
       if (pathname === "/api/inbox/read-all") {

@@ -655,6 +655,29 @@ test("inbox list forwards --state", async () => {
   assert.equal(calls[1].init.headers["x-taskboard-client"], "taskctl");
 });
 
+test("inbox list forwards --project", async () => {
+  const calls = [];
+  const fetch = async (url, init) => {
+    calls.push({ url, init });
+    return response({ items: [], unreadCount: 0 });
+  };
+
+  const projectResult = await run(["inbox", "list", "--project", "beta"], fetch);
+  const combinedResult = await run([
+    "inbox", "list", "--project", "beta", "--state", "all",
+  ], fetch);
+
+  assert.equal(projectResult.exitCode, 0);
+  assert.equal(combinedResult.exitCode, 0);
+  assert.equal(calls[0].url.pathname, "/api/inbox");
+  assert.equal(calls[0].url.searchParams.get("projectId"), "beta");
+  assert.equal(calls[0].init.method, "GET");
+  assert.equal(calls[1].url.pathname, "/api/inbox");
+  assert.equal(calls[1].url.searchParams.get("projectId"), "beta");
+  assert.equal(calls[1].url.searchParams.get("state"), "all");
+  assert.equal(calls[1].init.method, "GET");
+});
+
 test("inbox list rejects an invalid --state", async () => {
   const invalidState = await run(
     ["inbox", "list", "--state", "foo"],

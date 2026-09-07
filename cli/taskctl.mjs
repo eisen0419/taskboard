@@ -111,7 +111,7 @@ const COMMAND_OPTIONS = new Map([
   ["attachment list", new Set(["task", "comment", "after", "json"])],
   ["attachment download", new Set(["output", "json"])],
   ["attachment upload", new Set(["file", "task", "comment", "content-type", "kind", "json"])],
-  ["inbox list", new Set(["state", "json"])],
+  ["inbox list", new Set(["state", "project", "json"])],
   ["inbox mark", new Set(["state", "json"])],
   ["inbox read-all", new Set(["json"])],
   ["context current", new Set(["cwd", "json"])],
@@ -134,7 +134,7 @@ Commands:
   attachment list (--task ISSUE_ID | --comment COMMENT_ID) [--after CURSOR]
   attachment download ATTACHMENT_ID --output PATH
   attachment upload --file PATH (--task ISSUE_ID | --comment COMMENT_ID)
-  inbox list [--state unread|all]
+  inbox list [--state unread|all] [--project PROJECT_ID]
   inbox mark ITEM_ID --state read|unread|archived
   inbox read-all
 
@@ -445,6 +445,7 @@ async function execute(parsed, overrides) {
       }
       const search = new URLSearchParams();
       if (state !== undefined) search.set("state", state);
+      if (parsed.options.project !== undefined) search.set("projectId", parsed.options.project);
       const query = search.size > 0 ? `?${search}` : "";
       return api.request("GET", `/api/inbox${query}`);
     }

@@ -1031,13 +1031,16 @@ export function App() {
 
   const refreshInbox = useCallback(async () => {
     try {
-      const inbox = await listInbox("unread");
+      const projectId = selectedProjectId && selectedProjectId !== ALL_PROJECTS_ID
+        ? selectedProjectId
+        : undefined;
+      const inbox = await listInbox("unread", projectId);
       setInboxItems(inbox.items);
       setInboxUnreadCount(inbox.unreadCount);
     } catch (error) {
       console.error(error);
     }
-  }, []);
+  }, [selectedProjectId]);
 
   useEffect(() => {
     void refreshInbox();
