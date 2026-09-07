@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { DragEvent } from "react";
 import type { ActorIdentity, Task, TaskDraft, TaskStatus } from "../types";
 import { taskStatusLabel, useTaskboardI18n } from "../i18n";
+import { groupColumnTasks } from "../boardGrouping";
 import type { TaskCardPresentation, TaskConversationItem } from "../taskConversations";
 import { TaskCard } from "./TaskCard";
 import { PlusIcon, StatusIcon } from "./SemanticIcons";
@@ -23,6 +24,7 @@ interface BoardColumnProps {
   scrollRef: (element: HTMLDivElement | null) => void;
   status: TaskStatus;
   tasks: Task[];
+  collapsedParents: ReadonlySet<string>;
   presentations: Record<string, TaskCardPresentation>;
   now: number;
   emptyMessage: string;
@@ -48,13 +50,15 @@ interface BoardColumnProps {
   onDragEnd: () => void;
   onDragEnter: (status: TaskStatus) => void;
   onDrop: (status: TaskStatus, taskId: string, beforeTaskId: string | null) => void;
+  onToggleCollapse: (taskId: string) => void;
   onOpenConversation: (conversation: TaskConversationItem) => void;
 }
 
 export function BoardColumn({
   scrollRef,
   status,
-  tasks,
+  tasks: columnTasks,
+  collapsedParents,
   presentations,
   now,
   emptyMessage,
@@ -80,8 +84,11 @@ export function BoardColumn({
   onDragEnd,
   onDragEnter,
   onDrop,
+  onToggleCollapse,
   onOpenConversation,
 }: BoardColumnProps) {
+  const rows = groupColumnTasks(columnTasks, collapsedParents);
+  const tasks = rows.map((row) => row.task);
   const { language, text } = useTaskboardI18n();
   const details = STATUS_DETAILS[status];
   const label = taskStatusLabel(language, status);
@@ -170,11 +177,12 @@ export function BoardColumn({
       </header>
 
       <div className="column-list" ref={scrollRef}>
-        {tasks.map((task) => {
+        {rows.map((row) => {
+          if (row.hidden) return null;
+          const { task } = row;
           const dragShift = getTaskDragShift(task);
-          return (
+          const card = (
             <TaskCard
-              key={task.id}
               task={task}
               presentation={presentations[task.id]}
               now={now}
@@ -198,6 +206,31 @@ export function BoardColumn({
               onOpenConversation={onOpenConversation}
             />
           );
+          if (row.depth === 1) {
+            return (
+              <div className="board-card-nested" data-depth="1" key={task.id}>
+                {card}
+              </div>
+            );
+          }
+          if (row.childCount > 0) {
+            return (
+              <Fragment key={task.id}>
+                {card}
+                <button
+                  type="button"
+                  className="subtask-toggle"
+                  data-testid="subtask-toggle"
+                  aria-expanded={!collapsedParents.has(task.id)}
+                  onClick={() => onToggleCollapse(task.id)}
+                >
+                  {collapsedParents.has(task.id) ? "▸" : "▾"}{" "}
+                  {text(`${row.childCount} 个子任务`, `${row.childCount} sub-issues`)}
+                </button>
+              </Fragment>
+            );
+          }
+          return <Fragment key={task.id}>{card}</Fragment>;
         })}
         {tasks.length === 0 && <div className="column-empty">{emptyMessage}</div>}
       </div>

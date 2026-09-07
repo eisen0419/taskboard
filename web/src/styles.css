@@ -2330,6 +2330,27 @@ kbd {
   padding: 8px 8px 8px;
 }
 
+.board-card-nested {
+  margin-left: 16px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border-strong);
+}
+
+.subtask-toggle {
+  align-self: flex-start;
+  margin: -4px 0 8px 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.subtask-toggle:hover {
+  text-decoration: underline;
+}
+
 .column-empty {
   display: grid;
   flex: 1;
