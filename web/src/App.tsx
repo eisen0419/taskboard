@@ -794,7 +794,7 @@ export function App() {
 
   function handlePaletteSelect(item: CommandPaletteItem) {
     if (item.kind === "view") {
-      setBoardView(item.id.slice("view:".length) as BoardView);
+      selectBoardView(item.id.slice("view:".length) as BoardView);
     } else if (item.id === "project:__all__") {
       setSelectedProjectId(ALL_PROJECTS_ID);
     } else if (item.kind === "project") {
