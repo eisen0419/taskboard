@@ -12,7 +12,7 @@
 
 **Standards 轴**：本仓无 CODING_STANDARDS.md，对 `/Users/happy/projects/orca-lab/CODING_STANDARDS.md` §2（验证）、§3（本机工具陷阱）、§6（测试与断言）逐条判 report 里的取值方式。代码层另看：`package-lock.json` 的改动是否只有 knip 子树新增 + smol-toml 移除（`git diff $base..HEAD -- package-lock.json | grep -E '^[-+]\s+"node_modules/' | grep -vE 'node_modules/(knip|smol-toml)' | head`——knip 的传递依赖也算 knip 子树，看包名判）；删代码是否「整块删」而不是留下空壳或注释掉；去 `export` 的三处类型与两处符号是否保留了定义；重复、散弹式修改（Fowler 味道基线）。每条写「符合 / 违反 / 不适用」，违反的给 `file:line` 与你自己跑的命令。
 
-**Spec 轴**：逐条对议题「验收」6 条，判「做到 / 半做 / 没做 / 做错」，每条给出你自己跑的命令与结果（①②④ 的 grep / python / diff 判据逐字跑；③ `npm run knip` 亲跑；⑤ `npm run check` 亲跑取尾三数与 vitest 行 + 零行为 diff + 临时服务 + `import('smol-toml')` 探针）。先把条数写在 verdict 开头。Out of scope 4 条做了也算做错（尤其：删了表外的东西、`knip.json` 出现 `ignore*` 或 `rules`、动了 `InlineMediaComposer.test.tsx` 或 `test:components`、改了 `server/app.mjs` 等零 diff 文件）。
+**Spec 轴**：逐条对议题「验收」6 条，判「做到 / 半做 / 没做 / 做错」，每条给出你自己跑的命令与结果（①②④ 的 grep / python / diff 判据逐字跑；③ `npm run knip` 亲跑；⑤ `npm run check` 亲跑取尾三数与 vitest 行 + 零行为 diff + 临时服务 + `npm ls smol-toml` 只经 knip 一条路径）。先把条数写在 verdict 开头。Out of scope 4 条做了也算做错（尤其：删了表外的东西、`knip.json` 出现 `ignore*` 或 `rules`、动了 `InlineMediaComposer.test.tsx` 或 `test:components`、改了 `server/app.mjs` 等零 diff 文件）。
 
 两轴各一句汇总，不选总赢家。
 
