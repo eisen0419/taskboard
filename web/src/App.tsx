@@ -51,6 +51,11 @@ import {
 } from "./components/BoardCardDisplayMenu";
 import { DashboardView } from "./components/DashboardView";
 import { InboxView } from "./components/InboxView";
+import {
+  CommandPalette,
+  type CommandPaletteGroup,
+  type CommandPaletteItem,
+} from "./components/CommandPalette";
 import { ProjectReadmeView } from "./components/ProjectReadmeView";
 import { IssueListView } from "./components/IssueListView";
 import { ArchivedTasksColumn, OtherTasksPanel } from "./components/OtherTasksPanel";
@@ -461,6 +466,9 @@ export function App() {
       : text(actionError[0], actionError[1]);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
   const [search, setSearch] = useState("");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState("");
+  const [paletteIndex, setPaletteIndex] = useState(0);
   const [filters, setFilters] = useState(readTaskFilters);
   const [boardView, setBoardView] = useState<BoardView>(() => readProjectBoardView(initialProjectId));
   const [projectBoardDisplaySettings, setProjectBoardDisplaySettings] = useState(
@@ -720,6 +728,74 @@ export function App() {
       task.identifier,
     );
     window.history.pushState(window.history.state, "", detailUrl);
+  }
+
+  const paletteGroups: CommandPaletteGroup[] = useMemo(() => {
+    const q = paletteQuery.trim().toLowerCase();
+    const views = ([
+      { id: "view:readme", kind: "view", label: text("项目文档", "Project Docs") },
+      { id: "view:dashboard", kind: "view", label: text("仪表盘", "Dashboard") },
+      { id: "view:inbox", kind: "view", label: text("收件箱", "Inbox") },
+      { id: "view:issues", kind: "view", label: text("议题看板", "Issue board") },
+      { id: "view:list", kind: "view", label: text("列表视图", "List") },
+      { id: "view:gantt", kind: "view", label: text("甘特图", "Gantt") },
+    ] satisfies CommandPaletteItem[]).filter((item) => (
+      !q || item.label.toLowerCase().includes(q)
+    ));
+    const allProjectItems: CommandPaletteItem[] = [
+      {
+        id: "project:__all__",
+        kind: "project",
+        label: text("全部项目", "All projects"),
+      },
+      ...projects.map((project) => ({
+        id: `project:${project.id}`,
+        kind: "project" as const,
+        label: project.name,
+        hint: project.id,
+      })),
+    ];
+    const projectItems = allProjectItems.filter((item) => (
+      !q
+      || item.label.toLowerCase().includes(q)
+      || item.hint?.toLowerCase().includes(q)
+    ));
+    const taskItems: CommandPaletteItem[] = q
+      ? tasks
+          .filter((task) => matchesTaskSearch(task, paletteQuery, language))
+          .slice(0, 20)
+          .map((task) => ({
+            id: `task:${task.id}`,
+            kind: "task",
+            label: `${task.identifier} ${task.title}`,
+            hint: taskStatusLabel(language, task.status),
+          }))
+      : [];
+
+    return [
+      { id: "views", label: text("视图", "Views"), items: views },
+      { id: "projects", label: text("项目", "Projects"), items: projectItems },
+      { id: "tasks", label: text("议题", "Issues"), items: taskItems },
+    ];
+  }, [paletteQuery, projects, tasks, language, text]);
+
+  useEffect(() => {
+    setPaletteIndex(0);
+  }, [paletteQuery]);
+
+  function handlePaletteSelect(item: CommandPaletteItem) {
+    if (item.kind === "view") {
+      setBoardView(item.id.slice("view:".length) as BoardView);
+    } else if (item.id === "project:__all__") {
+      setSelectedProjectId(ALL_PROJECTS_ID);
+    } else if (item.kind === "project") {
+      setSelectedProjectId(item.id.slice("project:".length));
+    } else {
+      const task = tasks.find((candidate) => candidate.id === item.id.slice("task:".length));
+      if (task) openTaskDetail(task);
+    }
+    setPaletteOpen(false);
+    setPaletteQuery("");
   }
 
   async function openInboxTask(item: InboxItem) {
@@ -1145,6 +1221,11 @@ export function App() {
     function handleShortcut(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
       const isTyping = target?.matches("input, textarea, select, [contenteditable='true']");
+      if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
+      }
       if (
         event.key.toLowerCase() === "z"
         && (event.metaKey || event.ctrlKey)
@@ -1154,6 +1235,10 @@ export function App() {
       ) {
         event.preventDefault();
         void performUndo();
+        return;
+      }
+      if (event.key === "Escape" && paletteOpen) {
+        setPaletteOpen(false);
         return;
       }
       if (isTyping || contextMenu || projectMenuOpen) return;
@@ -1182,7 +1267,7 @@ export function App() {
 
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [boardView, contextMenu, detailTaskId, editor, projectMenuOpen, selectedProjectId]);
+  }, [boardView, contextMenu, detailTaskId, editor, paletteOpen, projectMenuOpen, selectedProjectId]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter(
@@ -2459,6 +2544,21 @@ export function App() {
           </div>
         )}
       </main>
+
+      {paletteOpen && (
+        <CommandPalette
+          query={paletteQuery}
+          onQueryChange={setPaletteQuery}
+          groups={paletteGroups}
+          activeIndex={paletteIndex}
+          onActiveIndexChange={setPaletteIndex}
+          onSelect={handlePaletteSelect}
+          onClose={() => {
+            setPaletteOpen(false);
+            setPaletteQuery("");
+          }}
+        />
+      )}
 
       {projectContextMenu && (
         <div
