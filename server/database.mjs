@@ -21,6 +21,7 @@ const INBOX_STATUS_SEVERITIES = {
   blocked: "attention",
   done: "info",
 };
+const INBOX_SEVERITY_RANK = { action_required: 3, attention: 2, info: 1 };
 
 export class ApiError extends Error {
   constructor(status, code, message, details) {
@@ -34,6 +35,10 @@ export class ApiError extends Error {
 
 function now() {
   return new Date().toISOString();
+}
+
+function higherSeverity(current, incoming) {
+  return INBOX_SEVERITY_RANK[current] >= INBOX_SEVERITY_RANK[incoming] ? current : incoming;
 }
 
 function commentConversationTitle(body) {
@@ -219,6 +224,7 @@ function inboxItemFromRow(row) {
     createdAt: row.created_at,
     readAt: row.read_at,
     archivedAt: row.archived_at,
+    collapsedCount: row.collapsed_count,
   };
 }
 
@@ -522,7 +528,8 @@ export class TaskboardDatabase {
         source_id TEXT,
         created_at TEXT NOT NULL,
         read_at TEXT,
-        archived_at TEXT
+        archived_at TEXT,
+        collapsed_count INTEGER NOT NULL DEFAULT 1
       );
 
       CREATE INDEX IF NOT EXISTS inbox_items_state_created
@@ -573,6 +580,11 @@ export class TaskboardDatabase {
     const projectColumns = this.database.prepare("PRAGMA table_info(projects)").all();
     if (!projectColumns.some((column) => column.name === "workspace_path")) {
       this.database.exec("ALTER TABLE projects ADD COLUMN workspace_path TEXT");
+    }
+
+    const inboxColumns = this.database.prepare("PRAGMA table_info(inbox_items)").all();
+    if (!inboxColumns.some((c) => c.name === "collapsed_count")) {
+      this.database.exec("ALTER TABLE inbox_items ADD COLUMN collapsed_count INTEGER NOT NULL DEFAULT 1");
     }
 
     const taskColumns = this.database.prepare("PRAGMA table_info(tasks)").all();
@@ -2423,13 +2435,41 @@ export class TaskboardDatabase {
   }
 
   #createInboxItem({ taskId, projectId, kind, severity, summary, actor, sourceId, timestamp }) {
+    const existing = this.database.prepare(`
+      SELECT id, severity FROM inbox_items
+      WHERE task_id = ? AND read_at IS NULL AND archived_at IS NULL
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `).get(taskId);
+    if (existing) {
+      this.database.prepare(`
+        UPDATE inbox_items SET
+          kind = ?, severity = ?, summary = ?,
+          actor_type = ?, actor_id = ?, actor_name = ?, actor_avatar_url = ?,
+          source_id = ?, created_at = ?, collapsed_count = collapsed_count + 1
+        WHERE id = ?
+      `).run(
+        kind,
+        higherSeverity(existing.severity, severity),
+        summary,
+        actor.type,
+        actor.id,
+        actor.name,
+        actor.avatarUrl,
+        sourceId,
+        timestamp,
+        existing.id,
+      );
+      return this.getInboxItem(existing.id);
+    }
+
     const id = randomUUID();
     this.database.prepare(`
       INSERT INTO inbox_items (
         id, task_id, project_id, kind, severity, summary,
         actor_type, actor_id, actor_name, actor_avatar_url,
-        source_id, created_at, read_at, archived_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+        source_id, created_at, read_at, archived_at, collapsed_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 1)
     `).run(
       id,
       taskId,

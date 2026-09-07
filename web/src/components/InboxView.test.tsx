@@ -16,6 +16,7 @@ const item: InboxItem = {
   createdAt: "2026-09-06T00:00:00.000Z",
   readAt: null,
   archivedAt: null,
+  collapsedCount: 1,
 };
 
 function renderInbox(overrides: Partial<Parameters<typeof InboxView>[0]> = {}) {
@@ -44,6 +45,16 @@ describe("InboxView", () => {
 
     expect(screen.getByText("需要处理").className).toContain("inbox-severity-action_required");
     expect(screen.getByText(item.summary)).toBeTruthy();
+  });
+
+  it("renders the collapsed count badge only when folded", () => {
+    renderInbox({ items: [{ ...item, collapsedCount: 3 }] });
+
+    expect(screen.getByTestId("inbox-collapsed-count").textContent).toBe("×3");
+
+    cleanup();
+    renderInbox({ items: [{ ...item, collapsedCount: 1 }] });
+    expect(screen.queryByTestId("inbox-collapsed-count")).toBeNull();
   });
 
   it("marks an item as read", () => {

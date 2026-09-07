@@ -35,6 +35,7 @@ export interface InboxItem {
   createdAt: string;
   readAt: string | null;
   archivedAt: string | null;
+  collapsedCount: number;
 }
 
 export type DevelopmentContext =

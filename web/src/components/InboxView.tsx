@@ -51,9 +51,23 @@ export function InboxView({
             const severityLabel = SEVERITY_LABELS[item.severity];
             return (
               <li className="inbox-item" key={item.id}>
-                <span className={`inbox-severity inbox-severity-${item.severity}`}>
-                  {text(severityLabel[0], severityLabel[1])}
-                </span>
+                <div className="inbox-item-badges">
+                  <span className={`inbox-severity inbox-severity-${item.severity}`}>
+                    {text(severityLabel[0], severityLabel[1])}
+                  </span>
+                  {item.collapsedCount > 1 ? (
+                    <span
+                      className="inbox-collapsed-count"
+                      data-testid="inbox-collapsed-count"
+                      title={text(
+                        `${item.collapsedCount} 条通知已折叠`,
+                        `${item.collapsedCount} notifications folded`,
+                      )}
+                    >
+                      ×{item.collapsedCount}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="inbox-item-content">
                   <p>{item.summary}</p>
                   <button type="button" onClick={() => onOpenTask(item)}>

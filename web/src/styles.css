@@ -5487,6 +5487,25 @@ kbd {
   white-space: nowrap;
 }
 
+.inbox-item-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inbox-collapsed-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 9px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
 .inbox-severity-action_required {
   background: rgba(220, 38, 38, 0.12);
   color: #b91c1c;

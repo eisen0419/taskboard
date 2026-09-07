@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, test } from "node:test";
 
 import { createTaskboardServer } from "../server/index.mjs";
@@ -254,19 +255,19 @@ test("inbox SSE broadcasts created and updated events", async () => {
   });
   const readAll = await request(baseUrl, "/api/inbox/read-all", { method: "POST" });
   assert.equal(changed.status, "in_review");
-  assert.equal(readAll.body.updated, 1);
+  assert.equal(readAll.body.updated, 0);
 
   let messages = "";
   while (
-    (messages.match(/^event: inbox\.item\.created$/gm)?.length ?? 0) < 2
-    || (messages.match(/^event: inbox\.updated$/gm)?.length ?? 0) < 2
+    (messages.match(/^event: inbox\.item\.created$/gm)?.length ?? 0) < 1
+    || (messages.match(/^event: inbox\.updated$/gm)?.length ?? 0) < 3
   ) {
     const chunk = await reader.read();
     assert.equal(chunk.done, false);
     messages += decoder.decode(chunk.value, { stream: true });
   }
-  assert.equal(messages.match(/^event: inbox\.item\.created$/gm).length, 2);
-  assert.equal(messages.match(/^event: inbox\.updated$/gm).length, 2);
+  assert.equal(messages.match(/^event: inbox\.item\.created$/gm).length, 1);
+  assert.equal(messages.match(/^event: inbox\.updated$/gm).length, 3);
   await reader.cancel();
 });
 
@@ -349,4 +350,181 @@ test("inbox SSE broadcasts on move", async () => {
   assert.equal(event.taskId, task.id);
   assert.equal(event.projectId, "local");
   await reader.cancel();
+});
+
+test("fold: same task updates the existing unread item", async () => {
+  const baseUrl = await startServer();
+  const task = await createTask(baseUrl, "折叠同一议题");
+  await agentStatus(baseUrl, task, "in_review");
+  const firstInbox = await unreadInbox(baseUrl);
+
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const comment = await request(baseUrl, `/api/tasks/${task.id}/comments`, {
+    method: "POST",
+    headers: AGENT_HEADERS,
+    body: { body: "请查看最新进展" },
+  });
+  assert.equal(comment.response.status, 201);
+
+  const foldedInbox = await unreadInbox(baseUrl);
+  assert.equal(foldedInbox.unreadCount, 1);
+  assert.equal(foldedInbox.items[0].id, firstInbox.items[0].id);
+  assert.equal(foldedInbox.items[0].collapsedCount, 2);
+  assert.equal(foldedInbox.items[0].kind, "comment_created");
+  assert.match(foldedInbox.items[0].summary, /^Agent 评论/);
+  assert.ok(foldedInbox.items[0].createdAt > firstInbox.items[0].createdAt);
+});
+
+test("fold: severity keeps the highest", async () => {
+  const baseUrl = await startServer();
+  const highSeverityTask = await createTask(baseUrl, "高优先级保留");
+  await agentStatus(baseUrl, highSeverityTask, "in_review");
+  const comment = await request(baseUrl, `/api/tasks/${highSeverityTask.id}/comments`, {
+    method: "POST",
+    headers: AGENT_HEADERS,
+    body: { body: "补充说明" },
+  });
+  assert.equal(comment.response.status, 201);
+
+  const promotedTask = await createTask(baseUrl, "优先级提升");
+  const doneTask = await agentStatus(baseUrl, promotedTask, "done");
+  await agentStatus(baseUrl, doneTask, "in_review");
+
+  const inbox = await unreadInbox(baseUrl);
+  assert.equal(
+    inbox.items.find((item) => item.taskId === highSeverityTask.id).severity,
+    "action_required",
+  );
+  assert.equal(
+    inbox.items.find((item) => item.taskId === promotedTask.id).severity,
+    "action_required",
+  );
+});
+
+test("fold: read items are not folded into", async () => {
+  const baseUrl = await startServer();
+  const task = await createTask(baseUrl, "已读后新建");
+  await agentStatus(baseUrl, task, "in_review");
+  await request(baseUrl, `/api/tasks/${task.id}/comments`, {
+    method: "POST",
+    headers: AGENT_HEADERS,
+    body: { body: "首次折叠" },
+  });
+  const foldedItem = (await unreadInbox(baseUrl)).items[0];
+  assert.equal(foldedItem.collapsedCount, 2);
+
+  const read = await request(baseUrl, `/api/inbox/${foldedItem.id}`, {
+    method: "PATCH",
+    body: { state: "read" },
+  });
+  assert.equal(read.response.status, 200);
+  const comment = await request(baseUrl, `/api/tasks/${task.id}/comments`, {
+    method: "POST",
+    headers: AGENT_HEADERS,
+    body: { body: "已读后的新评论" },
+  });
+  assert.equal(comment.response.status, 201);
+
+  const unread = await unreadInbox(baseUrl);
+  assert.equal(unread.unreadCount, 1);
+  assert.notEqual(unread.items[0].id, foldedItem.id);
+  assert.equal(unread.items[0].collapsedCount, 1);
+  const all = await request(baseUrl, "/api/inbox?state=all");
+  assert.equal(all.response.status, 200);
+  assert.equal(all.body.items.length, 2);
+});
+
+test("fold: different tasks do not fold", async () => {
+  const baseUrl = await startServer();
+  const firstTask = await createTask(baseUrl, "独立议题一");
+  const secondTask = await createTask(baseUrl, "独立议题二");
+  await agentStatus(baseUrl, firstTask, "in_review");
+  await agentStatus(baseUrl, secondTask, "in_review");
+
+  const inbox = await unreadInbox(baseUrl);
+  assert.equal(inbox.unreadCount, 2);
+  assert.deepEqual(new Set(inbox.items.map((item) => item.taskId)), new Set([
+    firstTask.id,
+    secondTask.id,
+  ]));
+  assert.ok(inbox.items.every((item) => item.collapsedCount === 1));
+});
+
+test("fold: SSE emits inbox.updated", async () => {
+  const baseUrl = await startServer();
+  const task = await createTask(baseUrl, "折叠实时事件");
+  const eventResponse = await fetch(`${baseUrl}/api/events`, { signal: AbortSignal.timeout(5_000) });
+  const reader = eventResponse.body.getReader();
+  const decoder = new TextDecoder();
+  await reader.read();
+
+  await agentStatus(baseUrl, task, "in_review");
+  const comment = await request(baseUrl, `/api/tasks/${task.id}/comments`, {
+    method: "POST",
+    headers: AGENT_HEADERS,
+    body: { body: "触发折叠事件" },
+  });
+  assert.equal(comment.response.status, 201);
+
+  let messages = "";
+  while (
+    !messages.includes("event: inbox.item.created")
+    || !messages.includes("event: inbox.updated")
+  ) {
+    const chunk = await reader.read();
+    assert.equal(chunk.done, false);
+    messages += decoder.decode(chunk.value, { stream: true });
+  }
+  const inboxMessages = messages
+    .split("\n\n")
+    .filter((message) => message.startsWith("event: inbox."));
+  assert.equal(inboxMessages.length, 2);
+  assert.ok(inboxMessages[0].startsWith("event: inbox.item.created\n"));
+  assert.ok(inboxMessages[1].startsWith("event: inbox.updated\n"));
+  const dataLine = inboxMessages[1].split("\n").find((line) => line.startsWith("data: "));
+  const event = JSON.parse(dataLine.slice(6));
+  assert.equal(event.item.collapsedCount, 2);
+  assert.equal(event.taskId, task.id);
+  await reader.cancel();
+});
+
+test("fold: existing inbox_items table gains collapsed_count", async () => {
+  let databasePath;
+  const baseUrl = await startServer((directory) => {
+    databasePath = path.join(directory, "taskboard.sqlite");
+    const database = new DatabaseSync(databasePath);
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS inbox_items (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('status_changed', 'comment_created')),
+        severity TEXT NOT NULL CHECK (severity IN ('action_required', 'attention', 'info')),
+        summary TEXT NOT NULL,
+        actor_type TEXT NOT NULL CHECK (actor_type IN ('user', 'agent')),
+        actor_id TEXT NOT NULL,
+        actor_name TEXT NOT NULL,
+        actor_avatar_url TEXT,
+        source_id TEXT,
+        created_at TEXT NOT NULL,
+        read_at TEXT,
+        archived_at TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS inbox_items_state_created
+        ON inbox_items(read_at, archived_at, created_at);
+
+      CREATE INDEX IF NOT EXISTS inbox_items_task
+        ON inbox_items(task_id);
+    `);
+    database.close();
+    return {};
+  });
+
+  const database = new DatabaseSync(databasePath);
+  const columns = database.prepare("PRAGMA table_info(inbox_items)").all();
+  database.close();
+  assert.ok(columns.some((column) => column.name === "collapsed_count"));
+  const inbox = await request(baseUrl, "/api/inbox");
+  assert.equal(inbox.response.status, 200);
 });
