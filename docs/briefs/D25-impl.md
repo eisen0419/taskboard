@@ -21,7 +21,7 @@ git grep -c 'composer-reference' -- ':!server/composer-reference.mjs' ':!web/src
 ## 步骤（按序，每步有判据）
 
 1. **配置先落**：新建根目录 `knip.json`，内容逐字取议题「期望行为 · 配置」那段 JSON（四个键）。
-2. **装 / 卸**：`npm install --save-dev --save-exact knip@6.34.0 > /tmp/npm-knip.log 2>&1; e=$?` → 0；`npm uninstall smol-toml > /tmp/npm-toml.log 2>&1; e=$?` → 0。核 `grep -c -F '"knip": "6.34.0"' package.json` = 1、`grep -c -F '"smol-toml"' package.json` = 0；`package-lock.json` 只由这两条命令改，**不手编**。
+2. **装 / 卸**：`npm install --save-dev --save-exact knip@6.34.0 > /tmp/npm-knip.log 2>&1; e=$?` → 0；`npm uninstall smol-toml > /tmp/npm-toml.log 2>&1; e=$?` → 0。核 `grep -c -F '"knip": "6.34.0"' package.json` = 1、`grep -c -F '"smol-toml"' package.json` = 0；`package-lock.json` 只由这两条命令改，**不手编**。**注意**：knip 6.34.0 自己依赖 `smol-toml ^1.8.0`，卸掉项目直接依赖后 lock 里仍会有 `node_modules/smol-toml`（1.8.x，`dev: true`），这是预期，不要为它改 knip 版本或手动删（ESCALATION-9 裁）；判据是 `npm ls smol-toml` 只剩经 knip 的一条路径。
 3. **脚本**：`package.json` `scripts` 加 `"knip": "knip"`；`check` 改为 `"npm run typecheck && npm run knip && npm run build && npm test"`（逐字）。
 4. **第一次跑门禁**：`npm run knip > /tmp/knip-1.log 2>&1; e=$?`（预期 e≠0，报 7 类发现，与议题表一致；**把这份 log 原样贴 report**。若报出表外的项，停手 BLOCKED 请示，不要动）。
 5. **清七项**（严格按表）：
@@ -39,7 +39,7 @@ git grep -c 'composer-reference' -- ':!server/composer-reference.mjs' ':!web/src
 
 ```
 npm run knip > /tmp/knip-final.log 2>&1; echo "knip e=$?"; grep -c Unused /tmp/knip-final.log                 # 0 / 0
-node --input-type=module -e "import('smol-toml').then(()=>console.log('still'),(e)=>console.log(e.code))"   # ERR_MODULE_NOT_FOUND
+npm ls smol-toml                                                                                             # 恰一条：taskboard -> knip@6.34.0 -> smol-toml@1.8.x
 python3 -c 'import json;d=json.load(open("knip.json"));print(sorted(d))'                                     # ['$schema', 'entry', 'ignore', 'project']
 git diff --diff-filter=D --name-only $(git merge-base origin/main HEAD)..HEAD                                # server/composer-reference.mjs
 git diff --name-only $(git merge-base origin/main HEAD)..HEAD | sort | tr '\n' ' '; echo                    # 恰 10 个文件

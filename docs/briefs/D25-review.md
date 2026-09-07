@@ -16,7 +16,7 @@
 
 两轴各一句汇总，不选总赢家。
 
-**定级**：产品行为缺陷（knip 非零退出或有 Unused、`check` 没接 knip、删了表外符号 / 文件、去 `export` 时把定义也删了导致 typecheck 靠别的改动补、`smol-toml` 仍在 lock、既有用例掉、`# tests` ≠ 158、vitest ≠ 26、pathspec 外有 diff、`knip.json` 用了豁免）= 必修；`check` 里 knip 的位置、删除后的空行 = 建议级，写进「局限」。
+**定级**：产品行为缺陷（knip 非零退出或有 Unused、`check` 没接 knip、删了表外符号 / 文件、去 `export` 时把定义也删了导致 typecheck 靠别的改动补、`package.json` 或 lock 根直接依赖仍有 `smol-toml`、既有用例掉、`# tests` ≠ 158、vitest ≠ 26、pathspec 外有 diff、`knip.json` 用了豁免）= 必修；`check` 里 knip 的位置、删除后的空行 = 建议级，写进「局限」。
 
 **逃避与拧松清单（机械核，先于两轴跑；命中任一即必修级，唯一豁免 = 议题验收明文要求该改动，VERDICT 里引原句）**：对 `git diff $(git merge-base origin/main HEAD)..HEAD` 逐项取值写进 VERDICT，五项全 0 也要写「清单 5 项全 0」。
 1. 断言被删或放宽：`test/**`、`web/src/**/*.test.ts*` 任何 diff；`# tests` ≠ 158；vitest ≠ 26。
@@ -29,7 +29,7 @@
 
 1. **第一次 knip log 与议题表一致**：impl report 贴的 `/tmp/knip-1.log` 是否恰七类项、无表外项；你在工位对 `<base>` 也跑一次（`git stash` 不许，用 `git worktree add /tmp/d25-base <base>` 临时工位装 knip 跑），贴取值后 `git worktree remove`。
 2. **保留符号仍在用**：`grep -n 'TASK_PRIORITIES' shared/domain.mjs`（定义 + `:32` 使用各 1）；`grep -n 'taskConversations(' web/src/taskConversations.ts`（定义 + 使用）；`grep -n 'fileKey\|MAX_ATTACHMENT_SIZE' web/src/components/InlineMediaComposer.tsx` ≥ 1。
-3. **lock 只动两处子树**：`git diff $base..HEAD -- package-lock.json | grep -E '^\+\s+"node_modules/' | grep -vc 'node_modules/knip'`（取值贴；knip 的传递依赖包名不含 knip 的写进「局限」逐个列出并说明是 knip 的依赖，不计 finding）；`grep -c '"node_modules/smol-toml"' package-lock.json` = 0。
+3. **lock 只动两处子树**：`git diff $base..HEAD -- package-lock.json | grep -E '^\+\s+"node_modules/' | grep -vc 'node_modules/knip'`（取值贴；knip 的传递依赖包名不含 knip 的写进「局限」逐个列出并说明是 knip 的依赖，不计 finding）；`node_modules/smol-toml` 仍在 lock 是预期（knip 6.34.0 自身依赖 `^1.8.0`，ESCALATION-9）：核 lock 里它 `dev: true`、版本 1.8.x、根 `packages[""].dependencies` 无 smol-toml、`npm ls smol-toml` 只经 knip 一条路径。
 4. **knip 版本与 Node**：`npx knip --version` = 6.34.0；`node --version` 贴；`npm ls knip` 贴。
 5. **产物功能不变**：`npm run build` 后 `dist/web/index.html` 存在；临时服务 `/` 200、`/api/inbox` 200。
 6. **diff 体积**：`git diff --stat $base..HEAD` 原样贴；除 `package-lock.json` 外净删 ≥ 100 行、净增 ≤ 15 行（knip.json + package.json）。超出写进「局限」。
