@@ -4074,6 +4074,14 @@ kbd {
   position: relative;
 }
 
+.activity-truncated {
+  margin: 0;
+  padding: 3px 8px 3px 44px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 18px;
+}
+
 .activity-entry::before {
   position: absolute;
   top: 0;

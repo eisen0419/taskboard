@@ -396,12 +396,13 @@ export async function listComments(taskId: string, signal?: AbortSignal): Promis
 export async function listTaskActivities(
   taskId: string,
   signal?: AbortSignal,
-): Promise<TaskChangeActivity[]> {
-  const data = await request<{ activities: TaskChangeActivity[] }>(
-    `/api/tasks/${encodeURIComponent(taskId)}/activities`,
+  limit?: number,
+): Promise<{ activities: TaskChangeActivity[]; hasMore: boolean }> {
+  const query = limit === undefined ? "" : `?limit=${limit}`;
+  return request<{ activities: TaskChangeActivity[]; hasMore: boolean }>(
+    `/api/tasks/${encodeURIComponent(taskId)}/activities${query}`,
     { signal },
   );
-  return data.activities;
 }
 
 export async function createComment(

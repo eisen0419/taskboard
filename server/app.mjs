@@ -1450,11 +1450,15 @@ export function createTaskboardServer(options = {}) {
         if (taskId.length === 0 || taskId.length > 128) {
           throw new ApiError(400, "INVALID_PATH", "Task id is invalid");
         }
-        if ([...url.searchParams.keys()].length > 0) {
-          throw new ApiError(400, "UNKNOWN_QUERY_PARAMETER", "Activity routes do not accept query parameters");
+        assertAllowedQuery(url.searchParams, new Set(["limit"]), "GET /api/tasks/:id/activities");
+        const rawLimit = url.searchParams.get("limit");
+        const limit = rawLimit === null ? 100 : Number(rawLimit);
+        if (rawLimit !== null && (!/^\d+$/.test(rawLimit) || !Number.isSafeInteger(limit) || limit < 1 || limit > 500)) {
+          throw new ApiError(400, "INVALID_FIELD", "'limit' must be an integer from 1 to 500");
         }
         if (request.method === "GET") {
-          return sendJson(response, 200, { activities: database.listTaskActivities(taskId) });
+          const { activities, hasMore } = database.listTaskActivities(taskId, limit);
+          return sendJson(response, 200, { activities, hasMore });
         }
         return methodNotAllowed(response, ["GET"]);
       }
