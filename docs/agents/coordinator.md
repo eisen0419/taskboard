@@ -1,6 +1,6 @@
 # taskboard 协调席指令面
 
-> 2026-09-03 Eisen 拍板 D22–D24：本仓（复刻自 chuspeeism/dashi-taskboard v1.1.22）改造成我们自己的议题板。三层分工与 orca-lab 同构：worker（codex-sol / grok / claude-review 席位窗）→ 协调席（本文件的读者；orca-lab ADR-0020 起为 taskboard 自己的协调窗，cwd 本仓，不与 ziping / orca-lab 共用）→ Fable（本仓自己的 `/fable taskboard` 窗，立项与裁决）。角色、审查环、验收纪律、收尾、请示动作全部以 `/Users/happy/projects/orca-lab/docs/agents/coordinator.md` 为准（先通读它），本文件只列 taskboard 差异。派活配方 = `orca-worker-howto` skill。
+> 2026-09-03 Eisen 拍板 D22–D24：本仓（复刻自 chuspeeism/dashi-taskboard v1.1.22）改造成我们自己的议题板。三层分工与 orca-lab 同构：worker（codex-sol / grok / claude-review 席位窗）→ 协调席（本文件的读者；orca-lab ADR-0020 起为 taskboard 自己的协调窗，cwd 本仓，不与 ziping / orca-lab 共用）→ Fable（本仓自己的 `/fable taskboard` 窗，立项与裁决）。角色、审查环、验收纪律、收尾、请示动作全部以 `/Users/happy/projects/orca-lab/docs/agents/coordinator.md` 为准（先通读它），本文件只列 taskboard 差异。派活配方 = orca-lab coordinator.md §3（原生编排，ADR-0019；ADR-0025 起为唯一派发轨）；`orca-worker-howto` skill 只装「先判要不要派」与任务书写法。
 
 本文件从 D23 起用新词：议题（gh issue）、立项（写清议题与任务书）、执行（一个议题在一支 spec 分支上的一轮派工，`d<N>`）、任务（Orca task：实现 / 审查 / 修复）、工位（一个席位在本次执行里的 worktree + 窗，`tools/lanes` 的 lane）、验收（协调席核证据包）、合入确认（Eisen 合 PR）、请示（ESCALATION 文件名不变）。orca-lab 那份仍是旧词，对照表见 orca-lab #157 议题正文；#157 合入后见 orca-lab `CONTEXT.md`「弃用词」节。
 
@@ -18,8 +18,8 @@
 3. **任务书落点** = 主仓 `docs/briefs/D<N>-impl.md` / `D<N>-review.md`（随 main 入 git，无 PII；判据用的正则随单入库为 `D<N>-*-re.txt`）；审查 VERDICT 落 worktree `docs/research/D<N>/<代号>-VERDICT.md`。
 4. **席位 config**：根 `.teams-orca.json`（已在 `.git/info/exclude`；codex-sol 实现 + grok 审查 + claude-review 备用 S3，anchor 全指本仓）。开工：`python3 /Users/happy/projects/orca-lab/tools/lanes create --repo /Users/happy/projects/taskboard --spec <N> --lanes <实现席> --seats <审查席> --base main --config /Users/happy/projects/taskboard/.teams-orca.json`。**`--config` 必带**：`lanes` 的默认模板写死 orca-lab 根 json（`tools/lanes` `DEFAULT_TEMPLATE`），不读 `--repo` 仓根；席位 `version` / `versionCommand` 两键缺一即 fail-closed（ESCALATION-1 / -2，2026-09-06），版本钉以本仓根 json 为真源，CLI 自更新后由 Fable 改钉。
 5. **工位环境**：`node_modules` 不入 git 且**不许软链主仓**（`npm install` 会顺着软链改主仓）。开工后在 spec worktree 与每个工位各跑一次 `npm install > /tmp/npm-<N>.log 2>&1; e=$?`（约 1 分钟，需网络），再亲跑一次 `npm run check` 取基线，与议题写的基线对上再派任务。
-6. **工具绝对路径**：`/Users/happy/projects/orca-lab/tools/{teams,teams-orca,team-monitor,lanes,mail}`；驱动 `cd /Users/happy/projects/taskboard` 后按 howto 起（脱协调窗进程树），`.teams/` 账本在主仓根（已排除）。
-7. **Monitor 跨仓注入**：`TM_DRIVER_ROOT=/Users/happy/projects/taskboard TM_TEAM_JSON=.teams/<team>/team.json zsh /Users/happy/projects/orca-lab/tools/team-monitor <team> <gen>`。
+6. **工具绝对路径**：`/Users/happy/projects/orca-lab/tools/{teams,teams-orca,team-monitor,lanes,mail}`；`.teams/` 是回退轨遗留，不再产生新账本（已排除）。
+7. **Monitor**：原生轨无驱动、无 `team-monitor`，盯场按 orca-lab §3「盯」（ADR-0025）。
 8. **收尾判据**：同 ziping 差异 7（journal 终态 `cleanup-exit-confirmed` / `unconfirmed`；席位窗清空以 `orca terminal list` 复核为唯一判据）。
 9. **本仓无 CODING_STANDARDS.md**：审查 Standards 轴对 orca-lab `CODING_STANDARDS.md` §2 / §3 / §6（验证纪律），代码风格按仓内既有风格（ESM、无框架 HTTP、`node:sqlite`、React 19 + Vite），不引入新依赖。
 10. **看板服务实例**：主仓 main 上跑着看板（`TASKBOARD_HOST=127.0.0.1 TASKBOARD_TRUSTED_ORIGINS=https://happymac-mini.tailc17e94.ts.net`，#2 起；`CODEX_*` 环境变量已废；端口 47823；pid 记在本仓 `.scratch/SESSION-STATE.md`；MacBook 经 Mac mini 的 `tailscale serve` 443→47823 打开 https://happymac-mini.tailc17e94.ts.net ，缺 TRUSTED_ORIGINS 该入口写请求会 403），是 Eisen 正在看的板。worker 与你的冒烟一律用临时端口（实现席 47999、审查席 47998）与临时 DATA_DIR，不碰 47823、不碰主仓 `.data/`。#1 / #2 合入后由你：停旧进程 → `git pull` → `npm install && npm run build:web` → 重起服务（带上述两个环境变量）→ `curl /health`。
