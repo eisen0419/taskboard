@@ -1,32 +1,35 @@
 # taskboard 协调席指令面
 
-> 2026-09-03 Eisen 拍板 D22–D24：本仓（复刻自 chuspeeism/dashi-taskboard v1.1.22）改造成我们自己的议题板。三层分工与 orca-lab 同构：worker（codex-sol / grok / claude-review 席位窗；2026-10-10 起 codex-sol 换成 `codex` 三席，见差异 4）→ 协调席（本文件的读者；orca-lab ADR-0020 起为 taskboard 自己的协调窗，cwd 本仓，不与 ziping / orca-lab 共用）→ Fable（本仓自己的 `/fable taskboard` 窗，立项与裁决）。角色、审查环、验收纪律、收尾、请示动作全部以 `/Users/happy/projects/orca-lab/docs/agents/coordinator.md` 为准（先通读它），本文件只列 taskboard 差异。派活配方 = orca-lab coordinator.md §3（原生编排，ADR-0019；ADR-0025 起为唯一派发轨）；`orca-worker-howto` skill 只装「先判要不要派」与任务书写法。
+> 2026-09-03 立（D22–D24）：本仓（复刻自 chuspeeism/dashi-taskboard v1.1.22）改造成我们自己的议题板。本仓派活走且只走 Orca 原生编排轨。角色、开窗、起场 / 盯 / 收 / 收尾、请示、问 Eisen、换窗、跨仓纪律**全部以 `/Users/happy/projects/orca-lab/docs/agents/coordinator.md` 当前版本为准**。本文件只装三类内容（orca-lab ADR-0038 决定 2）：本仓专有取值、对 orca-lab 某节的明确替换、本仓专有机制。冲突时以本文件为准。派前先读 `orca-worker-howto` skill §0 判要不要派。
 
-本文件从 D23 起用新词：议题（gh issue）、立项（写清议题与任务书）、执行（一个议题在一支 spec 分支上的一轮派工，`d<N>`）、任务（Orca task：实现 / 审查 / 修复）、工位（一个席位在本次执行里的 worktree + 窗，`tools/lanes` 的 lane）、验收（协调席核证据包）、合入确认（Eisen 合 PR）、请示（ESCALATION 文件名不变）。orca-lab 那份仍是旧词，对照表见 orca-lab #157 议题正文；#157 合入后见 orca-lab `CONTEXT.md`「弃用词」节。
+## 本仓专有取值
 
-## 分工边界（灰度期）
+- tracker：gh issues `eisen0419/taskboard`。`gh` 命令一律带 `--repo eisen0419/taskboard`。
+- 起窗命令：`cd /Users/happy/projects/taskboard && claude --model claude-opus-5-5 --effort xhigh --permission-mode auto --advisor fable`。
+- 信箱：`ORCA_MAIL_ROOT=/Users/happy/projects/taskboard/.scratch/mail`，每条 `/Users/happy/projects/orca-lab/tools/mail` 命令都前置它。收信监视：同一前缀加 `watch --me opus`。
+- 值班心跳：`/Users/happy/projects/orca-lab/tools/watch/fable-duty status --coord <本窗 handle> --repo /Users/happy/projects/taskboard --ghrepo eisen0419/taskboard`。
+- 席位 config：根 `.teams-orca.json`（已在 `.git/info/exclude`；Codex 三席 `codex` / `codex-deep` / `codex-luna`、grok 审查、claude-review 备用 S3，anchor 全指本仓，模型与版本钉以它为准）。建工位 `/Users/happy/projects/orca-lab/tools/lanes create --repo /Users/happy/projects/taskboard --spec <N> --lanes <实现席> --seats <审查席> --base main --config /Users/happy/projects/taskboard/.teams-orca.json`，**`--config` 必带**（`lanes` 缺省模板是 orca-lab 根 json）。`orca terminal create --command '<command 原文>'` 从根 json 抄。
+- 盯场：`/Users/happy/projects/orca-lab/tools/run-watch --run <run> --since <起场 UTC>`，cwd 本仓，状态落 `.scratch/run-watch/<run>.json`。`run-create --objective` 首字写「taskboard #N」。
+- 合入：顺序在差异 4。`lanes pr` / `lanes rm` 带 `--repo /Users/happy/projects/taskboard`；`gh pr merge <pr> --rebase --repo eisen0419/taskboard`。
+- 任务书落点：主仓 `docs/briefs/D<N>-impl.md` / `D<N>-review.md`（随 main 入 git，无 PII；判据用的正则随单入库为 `D<N>-*-re.txt`）；审查 VERDICT 落 worktree `docs/research/D<N>/<代号>-VERDICT.md`（随 spec 分支入 git）；原生轨回执 JSON 落 `.scratch/d<N>-native/`（`.scratch/` 已排除）。
+- 现查命令（只读，各自单独一条）：`git status -sb`、`git log origin/main..main --oneline`、`orca repo list`、`git worktree list`、`lsof -nP -iTCP:47823 -sTCP:LISTEN`（看板实例 pid）。
 
-- 议题与任务书由 Fable 出，你不写议题不写任务书；有错按 orca-lab §5③ 请示，不自行改。
-- 你做：开工（lanes / 建队 / 建任务 / 驱动 / Monitor）、盯场、验收亲验、审查环转发、关议题、`lanes pr`、收尾。
-- 代码 commit 审查 PASS 后才 push；PR 合入令由 Fable 发（orca-lab ADR-0017 五条自动合入条件全满足时不再等 Eisen，否则 Fable 先问他）；你只 report 等令。
-- **选席**按 orca-lab ADR-0016 全局表（正店 = orca-lab `notes/orca-编排阵容与分工.md`「选席表」节），Fable 立项时写进议题正文「席位」行，你照做；没写的请示不自选。D26 对照期间机械 / docs-only 议题按账本交替（2026-09-04）。
+## 开窗（替换 orca-lab §2 的本仓取值）
+
+1. 三核照 orca-lab §2 ④，命令用上面的取值。本仓没有 `coord-open`：本窗 handle 取 `$ORCA_TERMINAL_HANDLE`，为空时按 `$ORCA_PANE_KEY`（`tabId:leafId`）在 `orca terminal list --json` 里反查。
+2. 读 orca-lab 自上一窗以来的增量（orca-lab ADR-0038 决定 1）：`git -C /Users/happy/projects/orca-lab log --oneline --since=<上窗交接评论的 UTC> -- docs/agents/coordinator.md CODING_STANDARDS.md docs/adr docs/briefs`，逐条读新增 commit；没有交接评论时 `--since=7.days`。
+3. 接续顺序照 orca-lab §2 ②，`gh` 带 `--repo eisen0419/taskboard`。本仓没有 `docs/agents/issue-tracker.md`，「Continuation frontier」与「implement」两节读 orca-lab 的同名节。
+4. D 编号照 orca-lab §2 推导命令，`R` 与 `--repo` 换成本仓。
 
 ## taskboard 差异（对照 orca-lab 逐条替换）
 
 1. **验证入口**：`npm run check > log 2>&1; e=$?`（typecheck + vite build + node --test + vitest）。orca-lab 的 self-test / verify-invariants / mutate-* / 哈希门在本仓无对应物。冻结面 = `docs/briefs/**`、`docs/agents/**`、`AGENTS.md`、`CLAUDE.md`、`LICENSE`、`.teams-orca*.json`。
-2. **议题真源** = gh issues `eisen0419/taskboard`（2026-09-03 起开 issues；#1 #2 为首批，#2 阻塞于 #1）。
-3. **任务书落点** = 主仓 `docs/briefs/D<N>-impl.md` / `D<N>-review.md`（随 main 入 git，无 PII；判据用的正则随单入库为 `D<N>-*-re.txt`）；审查 VERDICT 落 worktree `docs/research/D<N>/<代号>-VERDICT.md`。
-4. **席位 config**：根 `.teams-orca.json`（已在 `.git/info/exclude`；codex 实现 + grok 审查 + claude-review 备用 S3，anchor 全指本仓。Codex 席 2026-10-10 起与 orca-lab 同为 `codex` / `codex-deep` / `codex-luna` 三席，模型以根 json 为准，选席同 orca-lab，orca-lab ADR-0031 / ADR-0035）。开工：`/Users/happy/projects/orca-lab/tools/lanes create --repo /Users/happy/projects/taskboard --spec <N> --lanes <实现席> --seats <审查席> --base main --config /Users/happy/projects/taskboard/.teams-orca.json`。**`--config` 必带**：`lanes` 的默认模板写死 orca-lab 根 json（`tools/lanes` `DEFAULT_TEMPLATE`），不读 `--repo` 仓根；席位 `version` / `versionCommand` 两键缺一即 fail-closed（ESCALATION-1 / -2，2026-09-06），版本钉以本仓根 json 为真源，CLI 自更新后由 Fable 改钉。
-5. **工位环境**：`node_modules` 不入 git 且**不许软链主仓**（`npm install` 会顺着软链改主仓）。开工后在 spec worktree 与每个工位各跑一次 `npm install > /tmp/npm-<N>.log 2>&1; e=$?`（约 1 分钟，需网络），再亲跑一次 `npm run check` 取基线，与议题写的基线对上再派任务。
-6. **工具绝对路径**：`/Users/happy/projects/orca-lab/tools/{teams,teams-orca,team-monitor,lanes,mail}`；`.teams/` 是回退轨遗留，不再产生新账本（已排除）。
-7. **Monitor**：原生轨无驱动、无 `team-monitor`，盯场按 orca-lab §3「盯」（ADR-0025）。
-8. **收尾判据**：同 ziping 差异 7（journal 终态 `cleanup-exit-confirmed` / `unconfirmed`；席位窗清空以 `orca terminal list` 复核为唯一判据）。
-9. **本仓无 CODING_STANDARDS.md**：审查 Standards 轴对 orca-lab `CODING_STANDARDS.md` §2 / §3 / §6（验证纪律），代码风格按仓内既有风格（ESM、无框架 HTTP、`node:sqlite`、React 19 + Vite），不引入新依赖。
-10. **看板服务实例**：主仓 main 上跑着看板（`TASKBOARD_HOST=127.0.0.1 TASKBOARD_TRUSTED_ORIGINS=https://happymac-mini.tailc17e94.ts.net`，#2 起；`CODEX_*` 环境变量已废；端口 47823；pid 记在本仓 `.scratch/SESSION-STATE.md`；MacBook 经 Mac mini 的 `tailscale serve` 443→47823 打开 https://happymac-mini.tailc17e94.ts.net ，缺 TRUSTED_ORIGINS 该入口写请求会 403），是 Eisen 正在看的板。worker 与你的冒烟一律用临时端口（实现席 47999、审查席 47998）与临时 DATA_DIR，不碰 47823、不碰主仓 `.data/`。#1 / #2 合入后由你：停旧进程 → `git pull` → `npm install && npm run build:web` → 重起服务（带上述两个环境变量）→ `curl /health`。
-11. **请示通道**：同 ziping 差异 10（信箱）：`.scratch/ESCALATION-<n>.md`（本仓编号从 1 起，`.scratch/` 已排除）→ `ORCA_MAIL_ROOT=/Users/happy/projects/taskboard/.scratch/mail tools/mail send --from opus --to fable --kind escalation --attach /Users/happy/projects/taskboard/.scratch/ESCALATION-<n>.md --terminal <Fable-handle>`。**信箱根 = 本仓 `.scratch/mail`**（orca-lab ADR-0020，2026-09-06：每条 `tools/mail` 命令都前置该变量，check / ack / report 同法；首次 send 自动建目录）。过渡期例外：taskboard#5 在 Grok #1（ziping 对的协调席）手上跑到收场为止，期间 tb#5 的信仍走 orca-lab 根、正文首行标「tb#5」。
-12. **进度记录**：写本仓 `.scratch/SESSION-STATE.md`（orca-lab ADR-0020：窗标识、在途、ESCALATION 编号、看板 pid 都落本仓，不再写 ziping 的）。
-13. **任务书必含提交纪律节**（同 ziping 差异 13）。#1 是删除型议题，任务书明文允许 `git add -A -- . ':(exclude)…'`，这是该议题的例外不是新默认。
-14. **worker 指令面**：本仓 `AGENTS.md` 与 `CLAUDE.md` 已改成指针（指向任务书），上游的 Taskboard Delivery Workflow（认领 / E3 / taskctl 流转）不再适用；worker 若按它行事按偏离处理。
-15. **库副本**：`.scratch/fixtures/taskboard-12.sqlite`（12 条议题）给 #1 验收④用；#2 合入时未重灌，按 D36 用离线列改名脚本 `.scratch/seed/migrate-2.sh`（6 列 `thread_codex_*`→`thread_agent_*`、丢 `ai_chat_*`、`codex-agent`→`agent`）迁了活库，原库副本在 `.scratch/seed/`；该 fixture 仍是旧列名，#2 后要先过同一脚本才能喂新代码。
-16. **lanes 前置（d1 实证，2026-09-04）**：`tools/lanes` 要求目标仓已在 Orca 注册（`orca repo add --path /Users/happy/projects/taskboard`，一次性）且 `core.hooksPath=tools/githooks`；本仓无 `tools/`，做法 = 本地拷 orca-lab 的 `tools/githooks/commit-msg`（剥 co-author trailer）到本仓 `tools/githooks/`，并把 `/tools/githooks/` 写进 `.git/info/exclude`，不入 git。新机器或重克隆要重做这两步。
-17. **Codex 新目录信任框（d1 实证，2026-09-04）**：Codex 对没进过 `~/.codex/config.toml` `[projects."<path>"] trust_level = "trusted"` 的目录首启会停在「local config, hooks, and exec policies to load › 1. Yes, continue」提示，preamble 送不进去，驱动只会反复重起（attempt 涨、`preamble-resend-uncertain terminal_not_writable`）而不报错。开工前把主仓、`spec/<N>` worktree 与各工位路径按该文件现有条目形状追加；已停住的窗 `orca terminal send --terminal <h> --text "1" --enter` 解锁后读屏核 preamble 送达。**Claude 席同理且更隐蔽**：路径不在 `~/.claude.json` projects 时首启信任框吃掉 preamble，驱动 300 秒预算耗尽后杀窗重起、无限循环（d1 gen 1 循环 9 次）。开工前在主仓手动起一次 `claude --model opus --dangerously-skip-permissions`，信任框默认停在 No，↓ 到 Yes 后 Enter，进主界面后 `/exit`，核 `~/.claude.json` projects 出现 `/Users/happy/projects/taskboard` 且 `hasTrustDialogAccepted=true`（Claude 按 git 主仓根记信任，worktree 不另记，d1 gen 2 实证）。驱动侧缺陷见 orca-lab 议题（spawn 到顶静默跳过 / 循环无上限 / 缺信任预检）。
+2. **工位环境**：`node_modules` 不入 git 且**不许软链主仓**（`npm install` 会顺着软链改主仓）。开工后在 spec worktree 与每个工位各跑一次 `npm install > /tmp/npm-<N>.log 2>&1; e=$?`（约 1 分钟，需网络），再亲跑一次 `npm run check` 取基线，与议题写的基线对上再派任务。
+3. **本仓无 CODING_STANDARDS.md**：审查 Standards 轴对 orca-lab `CODING_STANDARDS.md` §2 / §3 / §6（验证纪律），代码风格按仓内既有风格（ESM、无框架 HTTP、`node:sqlite`、React 19 + Vite），不引入新依赖。
+4. **替换 orca-lab §5「合入」**：合入确认归 Eisen。本仓无 merge-gate。审查 PASS → `lanes pr --repo /Users/happy/projects/taskboard --spec <N> --ready` → 问 Eisen（打 `ready-for-human`，停等）→ 点头后 `gh pr merge <pr> --rebase --repo eisen0419/taskboard` → 主仓 `git pull` → `lanes rm --repo /Users/happy/projects/taskboard --spec <N>`。
+5. **替换 orca-lab §3「收尾」第 5 条**：本仓无 `.teams/`、无 `verify-invariants`。只核 `orca terminal list` 无 spec-N 窗 · `git worktree list` 无 spec-N · `task-list` 全 completed · `orca worktree ps` 本仓 `agents` = 0。
+6. **看板服务实例**：看板跑在主仓 main 上（`TASKBOARD_HOST=127.0.0.1 TASKBOARD_TRUSTED_ORIGINS=https://happymac-mini.tailc17e94.ts.net`；端口 47823；MacBook 经 Mac mini 的 `tailscale serve` 443→47823 打开 https://happymac-mini.tailc17e94.ts.net ，缺 TRUSTED_ORIGINS 该入口写请求会 403），是 Eisen 看的板。worker 与协调席的冒烟一律用临时端口（实现席 47999、审查席 47998）与临时 DATA_DIR，不碰 47823、不碰主仓 `.data/`。动到服务代码的票合入后由协调席：停旧进程 → `git pull` → `npm install && npm run build:web` → 重起服务（带上述两个环境变量）→ `curl /health`。
+7. **worker 指令面**：本仓 `AGENTS.md` 与 `CLAUDE.md` 已改成指针（指向任务书），上游的 Taskboard Delivery Workflow（认领 / E3 / taskctl 流转）不再适用；worker 若按它行事按偏离处理。
+8. **库副本**：`.scratch/fixtures/taskboard-12.sqlite`（12 条议题）是旧列名的 fixture，喂新代码前先过离线列改名脚本 `.scratch/seed/migrate-2.sh`（6 列 `thread_codex_*`→`thread_agent_*`、丢 `ai_chat_*`、`codex-agent`→`agent`）；原库副本在 `.scratch/seed/`。
+9. **lanes 前置**：本仓已在 Orca 注册；`core.hooksPath=tools/githooks`（本地拷 orca-lab `tools/githooks/commit-msg` 到本仓 `tools/githooks/`，`/tools/githooks/` 写在 `.git/info/exclude`，不入 git；新机器或重克隆要重做）。
+10. **信任框**：主仓已在 `~/.codex/config.toml` `[projects]` 与 `~/.claude.json` projects（`hasTrustDialogAccepted=true`；Claude 按 git 主仓根记信任，worktree 不另记）。新机器首次派 Claude / Codex 席前先在本仓目录各起一次对应 CLI 接受信任框。
