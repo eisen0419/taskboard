@@ -1,4 +1,5 @@
 # taskboard 协调席指令面
+orca-lab base: 5a8db88bcfdb
 
 > 2026-09-03 立（D22–D24）：本仓（复刻自 chuspeeism/dashi-taskboard v1.1.22）改造成我们自己的议题板。本仓派活走且只走 Orca 原生编排轨。角色、开窗、起场 / 盯 / 收 / 收尾、请示、问 Eisen、换窗、跨仓纪律**全部以 `/Users/happy/projects/orca-lab/docs/agents/coordinator.md` 当前版本为准**。本文件只装三类内容（orca-lab ADR-0038 决定 2）：本仓专有取值、对 orca-lab 某节的明确替换、本仓专有机制。冲突时以本文件为准。派前先读 `orca-worker-howto` skill §0 判要不要派。
 
@@ -17,7 +18,7 @@
 ## 开窗（替换 orca-lab §2 的本仓取值）
 
 1. 三核照 orca-lab §2 ④，命令用上面的取值。本仓没有 `coord-open`：本窗 handle 取 `$ORCA_TERMINAL_HANDLE`，为空时按 `$ORCA_PANE_KEY`（`tabId:leafId`）在 `orca terminal list --json` 里反查。
-2. 读 orca-lab 自上一窗以来的增量（orca-lab ADR-0038 决定 1）：`git -C /Users/happy/projects/orca-lab log --oneline --since=<上窗交接评论的 UTC> -- docs/agents/coordinator.md CODING_STANDARDS.md docs/adr docs/briefs`，逐条读新增 commit；没有交接评论时 `--since=7.days`。
+2. 读 orca-lab 自上一窗以来的增量（orca-lab ADR-0038 决定 1）：`git -C /Users/happy/projects/orca-lab log --oneline --since=<上窗交接评论的 UTC> -- docs/agents/coordinator.md CODING_STANDARDS.md docs/adr docs/briefs`，逐条读新增 commit；没有交接评论时 `--since=7.days`。接着跑 `/Users/happy/projects/orca-lab/tools/coord-drift --repo taskboard`，报 `base-drift` 或 `anchor-gone` 时按 orca-lab `coordinator.md` §8 处理。
 3. 接续顺序照 orca-lab §2 ②，`gh` 带 `--repo eisen0419/taskboard`。本仓没有 `docs/agents/issue-tracker.md`，「Continuation frontier」与「implement」两节读 orca-lab 的同名节。
 4. D 编号照 orca-lab §2 推导命令，`R` 与 `--repo` 换成本仓。
 
